@@ -104,29 +104,34 @@ export class WorkflowsService {
       for (const e of (def.edges ?? [])) {
         const frontendSourceId = e.source ?? e.from;
         const frontendTargetId = e.target ?? e.to;
-        
-        // Map frontend IDs to database IDs
+
         const sourceId = frontendIdToDbId.get(frontendSourceId) || frontendSourceId;
         const targetId = frontendIdToDbId.get(frontendTargetId) || frontendTargetId;
-        
-        // Verify nodes exist
+
         if (!sourceId || !targetId) {
           this.log.warn(`edge skipped (missing node): from=${frontendSourceId} to=${frontendTargetId}`);
           continue;
         }
-        
+
         const kind = (e.kind ?? e.type ?? 'normal') as string;
         const condition: string | null = e.condition ?? null;
 
+        const sourceHandle: string | null = e.sourceHandle ?? null;
+        const targetHandle: string | null = e.targetHandle ?? null;
+
         await client.query(
-          `INSERT INTO public._edge(source_id,target_id,kind,condition)
-           VALUES ($1,$2,$3,$4)
+          `INSERT INTO public._edge(source_id,target_id,kind,condition,source_handle,target_handle)
+           VALUES ($1,$2,$3,$4,$5,$6)
            ON CONFLICT (source_id, target_id) DO UPDATE SET
-             kind=EXCLUDED.kind, condition=EXCLUDED.condition`,
-          [sourceId, targetId, kind, condition]
+             kind = EXCLUDED.kind,
+             condition = EXCLUDED.condition,
+             source_handle = EXCLUDED.source_handle,
+             target_handle = EXCLUDED.target_handle`,
+          [sourceId, targetId, kind, condition, sourceHandle, targetHandle]
         );
         edgeCount++;
       }
+
       this.log.log(`_edge inserted count=${edgeCount}`);
 
       await client.query('COMMIT');
@@ -197,14 +202,15 @@ export class WorkflowsService {
     // Single query with JOINs to get workflow, nodes, and edges
     const { rows } = await this.db.query(
       `SELECT 
-        w.id as workflow_id, w.name as workflow_name,
-        s.id as node_id, s.label, s.kind, s.position, s.data,
-        e.id as edge_id, e.source_id, e.target_id, e.kind as edge_kind, e.condition
-       FROM public._workflow w
-       LEFT JOIN public._node s ON s.workflow_id = w.id
-       LEFT JOIN public._edge e ON e.source_id = s.id OR e.target_id = s.id
-       WHERE w.id = $1
-       ORDER BY s.created_at, e.created_at`,
+      w.id as workflow_id, w.name as workflow_name,
+      s.id as node_id, s.label, s.kind, s.position, s.data,
+      e.id as edge_id, e.source_id, e.target_id, e.kind as edge_kind, e.condition,
+      e.source_handle, e.target_handle
+     FROM public._workflow w
+     LEFT JOIN public._node s ON s.workflow_id = w.id
+     LEFT JOIN public._edge e ON e.source_id = s.id OR e.target_id = s.id
+     WHERE w.id = $1
+     ORDER BY s.created_at, e.created_at`,
       [id]
     );
 
@@ -243,6 +249,8 @@ export class WorkflowsService {
             target: row.target_id,
             type: row.edge_kind === 'if' ? 'if' : 'normal',
             condition: row.condition || undefined,
+            sourceHandle: row.source_handle || undefined,
+            targetHandle: row.target_handle || undefined,
           });
         }
       }

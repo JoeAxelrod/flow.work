@@ -26,7 +26,10 @@ export interface WorkflowEdge {
   target: string;
   type: EdgeType;
   condition?: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 }
+
 
 export interface NodeConfig {
   name: string;

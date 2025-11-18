@@ -33,14 +33,17 @@ CREATE TABLE IF NOT EXISTS public._node (
 
 -- edges (source/target reference _node)
 CREATE TABLE IF NOT EXISTS public._edge (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  source_id   UUID NOT NULL REFERENCES public._node(id) ON DELETE CASCADE,
-  target_id   UUID NOT NULL REFERENCES public._node(id) ON DELETE CASCADE,
-  kind        edge_kind NOT NULL DEFAULT 'normal',
-  condition   TEXT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  source_id     UUID NOT NULL REFERENCES public._node(id) ON DELETE CASCADE,
+  target_id     UUID NOT NULL REFERENCES public._node(id) ON DELETE CASCADE,
+  kind          edge_kind NOT NULL DEFAULT 'normal',
+  condition     TEXT NULL,
+  source_handle TEXT NULL,
+  target_handle TEXT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (source_id, target_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_edge_source ON public._edge(source_id);
 CREATE INDEX IF NOT EXISTS idx_edge_target ON public._edge(target_id);
 
@@ -60,3 +63,8 @@ CREATE TABLE IF NOT EXISTS public._activity (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_activity_instance ON public._activity(instance_id);
+
+ALTER TABLE public._edge
+  ADD COLUMN source_handle TEXT NULL,
+  ADD COLUMN target_handle TEXT NULL;
+

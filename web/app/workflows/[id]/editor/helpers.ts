@@ -21,18 +21,20 @@ export function nodesToFlowNodes(nodes: WorkflowNode[]): FlowNode[] {
  * Transform workflow edges to ReactFlow edges
  */
 export function edgesToFlowEdges(edges: WorkflowEdge[]): FlowEdge[] {
-  return edges.map((edge) => {
+  const a =  edges.map((edge) => {
     const isConditional = edge.type === 'if' && edge.condition;
     return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      // Don't force handles - let ReactFlow use available handles based on direction
-      // This allows edges to work with the new bidirectional handles
+      // 👇 restore handles from DB
+      sourceHandle: edge.sourceHandle ?? undefined,
+      targetHandle: edge.targetHandle ?? undefined,
+
       markerEnd: {
         type: MarkerType.ArrowClosed,
       },
-      label: isConditional ? `if...=${edge.condition.split('=')[1]}` : undefined,
+      label: isConditional ? `if...=${edge.condition!.split('=')[1]}` : undefined,
       labelStyle: edge.type === 'if' ? { fill: '#ef4444', fontWeight: 'bold' } : undefined,
       data: {
         type: edge.type || 'normal',
@@ -40,7 +42,11 @@ export function edgesToFlowEdges(edges: WorkflowEdge[]): FlowEdge[] {
       },
     };
   });
+
+  console.log("edgesToFlowEdges", a);
+  return a;
 }
+
 
 /**
  * Transform ReactFlow nodes to workflow nodes
@@ -59,14 +65,21 @@ export function flowNodesToWorkflowNodes(nodes: Node[]): WorkflowNode[] {
  * Transform ReactFlow edges to workflow edges
  */
 export function flowEdgesToWorkflowEdges(edges: Edge[]): WorkflowEdge[] {
-  return edges.map((e) => ({
+  const a =  edges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
     type: (e.data as any)?.type || 'normal',
     condition: (e.data as any)?.condition,
+    // 👇 persist handles
+    sourceHandle: e.sourceHandle ?? null,
+    targetHandle: e.targetHandle ?? null,
   }));
+
+  console.log("flowEdgesToWorkflowEdges", a);
+  return a;
 }
+
 
 /**
  * Generate a temporary node ID (will be replaced by DB-generated UUID)
