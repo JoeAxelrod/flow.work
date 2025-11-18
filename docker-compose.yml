@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: workflow
+    ports: ["5432:5432"]
+    volumes:
+      - db18:/var/lib/postgresql
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+
+
+  rabbit:
+    image: rabbitmq:3.13-management
+    ports: ["5672:5672", "15672:15672"]
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  # api:
+  #   build: ./api
+  #   env_file: ./api/.env
+  #   depends_on: [db, rabbit]
+  #   ports: ["3001:3001"]
+
+  # web:
+  #   build: ./web
+  #   env_file: ./web/.env.local
+  #   depends_on: [api]
+  #   ports: ["3000:3000"]
+
+
+  dbgate:
+    image: dbgate/dbgate
+    depends_on: [db]
+    ports: ["3003:3000"]
+    environment:
+      CONNECTIONS: local
+      LABEL_local: Workflow PG
+      SERVER_local: db
+      USER_local: postgres
+      PASSWORD_local: postgres
+      ENGINE_local: postgres@dbgate-plugin-postgres
+      DATABASE_local: workflow
+
+
+volumes:
+  db18:
+  pgadmin_data:
+
+
+
+# docker compose down --volumes --remove-orphans
+# docker compose up -d --build db rabbit
+# # check: http://localhost:15672  (guest/guest)
+# docker compose run --rm api sh -lc "npm ci && npm run db:init && npm run build && npm start"
+# docker compose run --rm -p 3000:3000 web sh -lc "npm ci && npm run dev"
+
+# docker compose run --rm api sh -lc "psql -h db -U postgres -d workflow -f ./schema.sql"
