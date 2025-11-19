@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
+import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';
+import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 
 import ReactFlow, {
   addEdge,
@@ -69,6 +71,16 @@ export default function WorkflowEditorPage() {
   
   // Track the node where connection started to fix source/target swap issue
   const connectionStartNodeId = useRef<string | null>(null);
+  
+  // Auto-save: debounce timer and saving state
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSaveToast, setShowSaveToast] = useState(false);
+  const isInitialLoadRef = useRef(true);
+  const isServerSyncRef = useRef(false);
+
+  
+
 
   // Fetch workflow
   const fetchWorkflow = useCallback(async () => {
@@ -95,6 +107,16 @@ export default function WorkflowEditorPage() {
   useEffect(() => {
     fetchWorkflow();
   }, [fetchWorkflow]);
+
+  // Mark initial load as complete after first render
+  useEffect(() => {
+    if (workflowData && nodes.length > 0) {
+      // Small delay to ensure all state is set
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 100);
+    }
+  }, [workflowData, nodes.length]);
 
   // Listen for edit and delete node events from custom node component
   useEffect(() => {
@@ -195,6 +217,7 @@ export default function WorkflowEditorPage() {
           const lastEdge = newEdge[newEdge.length - 1];
           lastEdge.data = { type: 'normal' };
         }
+        // Auto-save will be triggered by the edges change effect
         return newEdge;
       });
     },
@@ -275,6 +298,7 @@ export default function WorkflowEditorPage() {
     setNodes((nds) => [...nds, newNode]);
     setShowAddNodeModal(false);
     setNewNodeConfig({ name: '', kind: 'noop', data: {} });
+    // Auto-save will be triggered by the nodes change effect
   }, [nodes, newNodeConfig, setNodes]);
 
   // Save edge configuration
@@ -287,6 +311,7 @@ export default function WorkflowEditorPage() {
 
     setEditingEdge(null);
     setEdgeConfig({ type: 'normal', condition: '' });
+    // Auto-save will be triggered by the edges change effect
   }, [editingEdge, edgeConfig, setEdges]);
 
   // Delete edge
@@ -308,46 +333,100 @@ export default function WorkflowEditorPage() {
 
     setEditingNode(null);
     setNodeConfig({ name: '', kind: 'noop', data: {} });
+    // Auto-save will be triggered by the nodes change effect
   }, [editingNode, nodeConfig, setNodes]);
 
-  // Save workflow
-  const save = useCallback(async () => {
-    if (!workflowData) return;
+  // Auto-save workflow (debounced)
+  const autoSave = useCallback(async () => {
+    if (isInitialLoadRef.current || !workflowData) return;
+  
+    setIsSaving(true);
+    try {
+      const def = createWorkflowDefinition(
+        workflowData.workflow.id,
+        workflowData.workflow.name,
+        nodes,
+        edges
+      );
+      const result = await importWorkflow(def);
+  
+      if (result.nodeIdMap || result.stationIdMap) {
+        const idMap = (result.nodeIdMap || result.stationIdMap) as Record<string, string>;
+  
+        // mark that the next nodes/edges change is from the server
+        isServerSyncRef.current = true;
+  
+        setNodes((nds) => {
+          let changed = false;
+          const updated = nds.map((node) => {
+            const newId = idMap[node.id];
+            if (newId && newId !== node.id) {
+              changed = true;
+              return { ...node, id: newId };
+            }
+            return node;
+          });
+          return changed ? updated : nds;
+        });
+  
+        setEdges((eds) => {
+          let changed = false;
+          const updated = eds.map((edge) => {
+            const newSource = idMap[edge.source] || edge.source;
+            const newTarget = idMap[edge.target] || edge.target;
+            if (newSource !== edge.source || newTarget !== edge.target) {
+              changed = true;
+              return { ...edge, source: newSource, target: newTarget };
+            }
+            return edge;
+          });
+          return changed ? updated : eds;
+        });
+      }
+  
+      setShowSaveToast(true);
+    } catch (err: any) {
+      console.error('Auto-save failed:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [workflowData, nodes, edges, setNodes, setEdges]);
+  
 
-    const def = createWorkflowDefinition(
-      workflowData.workflow.id,
-      workflowData.workflow.name,
-      nodes,
-      edges
-    );
-    const result = await importWorkflow(def);
-    
-    // Update node IDs with database-generated IDs if mapping provided
-    if (result.nodeIdMap || result.stationIdMap) {
-      const idMap = (result.nodeIdMap || result.stationIdMap) as Record<string, string>;
-      setNodes((nds) =>
-        nds.map((node) => {
-          const newId = idMap[node.id] || node.id;
-          if (newId !== node.id) {
-            return { ...node, id: newId };
-          }
-          return node;
-        })
-      );
-      setEdges((eds) =>
-        eds.map((edge) => {
-          const newSource = idMap[edge.source] || edge.source;
-          const newTarget = idMap[edge.target] || edge.target;
-          if (newSource !== edge.source || newTarget !== edge.target) {
-            return { ...edge, source: newSource, target: newTarget };
-          }
-          return edge;
-        })
-      );
+  // Debounced save function
+  const debouncedSave = useCallback(() => {
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
     
-    alert('Workflow saved!');
-  }, [workflowData, nodes, edges, setNodes, setEdges]);
+    // Set new timeout (500ms debounce)
+    saveTimeoutRef.current = setTimeout(() => {
+      autoSave();
+    }, 500);
+  }, [autoSave]);
+
+  // Auto-save when nodes or edges change
+  useEffect(() => {
+    if (!workflowData || isInitialLoadRef.current) {
+      return;
+    }
+  
+    // If this change came from server mapping, don't auto-save again
+    if (isServerSyncRef.current) {
+      isServerSyncRef.current = false;
+      return;
+    }
+  
+    debouncedSave();
+  
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [nodes, edges, debouncedSave, workflowData]);
+  
 
   // Loading state
   if (loading) {
@@ -395,7 +474,12 @@ export default function WorkflowEditorPage() {
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
             {workflowData?.workflow?.name || 'Workflow'}
           </h2>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            {isSaving && (
+              <span style={{ fontSize: '0.875rem', color: '#6b7280', marginRight: '8px' }}>
+                Saving...
+              </span>
+            )}
             <button
               onClick={() => setShowAddNodeModal(true)}
               style={{
@@ -408,19 +492,6 @@ export default function WorkflowEditorPage() {
               }}
             >
               Add Node
-            </button>
-            <button
-              onClick={save}
-              style={{
-                padding: '8px 16px',
-                background: '#4f46e5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              Save
             </button>
           </div>
         </div>
@@ -492,6 +563,43 @@ export default function WorkflowEditorPage() {
             }}
           />
         )}
+
+        {/* Save Toast Notification */}
+        <Snackbar
+          open={showSaveToast}
+          autoHideDuration={2000}
+          onClose={() => setShowSaveToast(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          TransitionComponent={Slide}
+          TransitionProps={{ direction: 'up' } as SlideProps}
+          sx={{
+            '& .MuiSnackbar-root': {
+              bottom: 24,
+            },
+          }}
+        >
+          <Alert
+            onClose={() => setShowSaveToast(false)}
+            severity="success"
+            icon={<CheckCircleIcon />}
+            sx={{
+              backgroundColor: 'rgba(16, 185, 129, 0.95)',
+              color: 'white',
+              '& .MuiAlert-icon': {
+                color: 'white',
+              },
+              '& .MuiAlert-message': {
+                color: 'white',
+                fontWeight: 500,
+              },
+              borderRadius: 2,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              backdropFilter: 'blur(10px)',
+            }}
+          >
+            Workflow saved
+          </Alert>
+        </Snackbar>
       </div>
     </WorkflowEditorProvider>
   );
