@@ -12,6 +12,7 @@ interface EdgeModalProps {
   onSave: () => void;
   onDelete?: () => void;
   onCancel: () => void;
+  isReadOnly?: boolean; // If true, form is read-only (instance mode)
 }
 
 export function EdgeModal({
@@ -22,11 +23,12 @@ export function EdgeModal({
   onSave,
   onDelete,
   onCancel,
+  isReadOnly = false,
 }: EdgeModalProps) {
   const { getNodeName } = useWorkflowEditor();
 
   const isEditMode = !!edge;
-  const title = isEditMode ? 'Edit Edge' : 'Add New Edge';
+  const title = isReadOnly ? 'View Edge' : (isEditMode ? 'Edit Edge' : 'Add New Edge');
   const sourceName = edge ? getNodeName(edge.source) : '';
   const targetName = edge ? getNodeName(edge.target) : '';
 
@@ -79,12 +81,15 @@ export function EdgeModal({
                 condition: e.target.value !== 'if' ? '' : config.condition,
               })
             }
+            disabled={isReadOnly}
             style={{
               width: '100%',
               padding: '8px',
               border: '1px solid #d1d5db',
               borderRadius: '4px',
               fontSize: '14px',
+              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              cursor: isReadOnly ? 'not-allowed' : 'pointer',
             }}
           >
             <option value="normal">Normal</option>
@@ -101,12 +106,16 @@ export function EdgeModal({
               value={config.condition}
               onChange={(e) => onConfigChange({ ...config, condition: e.target.value })}
               placeholder="activity_metadata.body.someparam = 5"
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
               style={{
                 width: '100%',
                 padding: '8px',
                 border: '1px solid #d1d5db',
                 borderRadius: '4px',
                 fontSize: '14px',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
               }}
             />
             <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
@@ -115,43 +124,75 @@ export function EdgeModal({
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
-          {isEditMode && onDelete && (
-            <button
-              onClick={() => {
-                if (confirm('Are you sure you want to delete this edge?')) {
-                  onDelete();
-                }
-              }}
-              style={{
-                padding: '8px 16px',
-                background: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+        {!isReadOnly && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+            {isEditMode && onDelete && (
+              <button
+                onClick={() => {
+                  if (confirm('Are you sure you want to delete this edge?')) {
+                    onDelete();
+                  }
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
               >
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-              Delete
-            </button>
-          )}
-          <div style={{ display: 'flex', gap: '8px', marginLeft: isEditMode && onDelete ? '0' : 'auto' }}>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                Delete
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: '8px', marginLeft: isEditMode && onDelete ? '0' : 'auto' }}>
+              <button
+                onClick={onCancel}
+                style={{
+                  padding: '8px 16px',
+                  background: '#6b7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onSave}
+                style={{
+                  padding: '8px 16px',
+                  background: '#4f46e5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+        {isReadOnly && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button
               onClick={onCancel}
               style={{
@@ -163,23 +204,10 @@ export function EdgeModal({
                 cursor: 'pointer',
               }}
             >
-              Cancel
-            </button>
-            <button
-              onClick={onSave}
-              style={{
-                padding: '8px 16px',
-                background: '#4f46e5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              Save
+              Close
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -8,11 +8,12 @@ interface NodeModalProps {
   onConfigChange: (config: NodeConfig) => void;
   onSave: () => void;
   onCancel: () => void;
+  isReadOnly?: boolean; // If true, form is read-only (instance mode)
 }
 
-export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: NodeModalProps) {
+export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, isReadOnly = false }: NodeModalProps) {
   const isEditMode = !!nodeId;
-  const title = isEditMode ? 'Edit Node' : 'Add New Node';
+  const title = isReadOnly ? 'View Node' : (isEditMode ? 'Edit Node' : 'Add New Node');
   const saveButtonText = isEditMode ? 'Save' : 'Add Node';
   const saveButtonColor = isEditMode ? '#4f46e5' : '#10b981';
 
@@ -61,12 +62,16 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: 
             value={config.name}
             onChange={(e) => onConfigChange({ ...config, name: e.target.value })}
             placeholder="Node name"
+            readOnly={isReadOnly}
+            disabled={isReadOnly}
             style={{
               width: '100%',
               padding: '8px',
               border: '1px solid #d1d5db',
               borderRadius: '4px',
               fontSize: '14px',
+              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              cursor: isReadOnly ? 'not-allowed' : 'text',
             }}
           />
         </div>
@@ -82,12 +87,15 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: 
                 data: {}, // Reset data when kind changes
               })
             }
+            disabled={isReadOnly}
             style={{
               width: '100%',
               padding: '8px',
               border: '1px solid #d1d5db',
               borderRadius: '4px',
               fontSize: '14px',
+              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              cursor: isReadOnly ? 'not-allowed' : 'pointer',
             }}
           >
             <option value="noop">Noop</option>
@@ -111,12 +119,16 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: 
                 })
               }
               placeholder="https://httpbin.org/post"
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
               style={{
                 width: '100%',
                 padding: '8px',
                 border: '1px solid #d1d5db',
                 borderRadius: '4px',
                 fontSize: '14px',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
               }}
             />
           </div>
@@ -137,45 +149,68 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: 
                 })
               }
               placeholder="30000"
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
               style={{
                 width: '100%',
                 padding: '8px',
                 border: '1px solid #d1d5db',
                 borderRadius: '4px',
                 fontSize: '14px',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
               }}
             />
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '8px 16px',
-              background: '#6b7280',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
+        {!isReadOnly && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: '8px 16px',
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
             >
-            Cancel
-          </button>
-          <button
-            onClick={onSave}
-            style={{
-              padding: '8px 16px',
-              background: saveButtonColor,
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            {saveButtonText}
-          </button>
-        </div>
+              Cancel
+            </button>
+            <button
+              onClick={onSave}
+              style={{
+                padding: '8px 16px',
+                background: saveButtonColor,
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              {saveButtonText}
+            </button>
+          </div>
+        )}
+        {isReadOnly && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: '8px 16px',
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

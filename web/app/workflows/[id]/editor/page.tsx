@@ -172,6 +172,47 @@ export default function WorkflowEditorPage() {
     }
   }, [instanceData, isInstanceMode, setNodes]);
 
+  // Enrich edges with instance data - mark used edges in green
+  useEffect(() => {
+    if (isInstanceMode && instanceData && edges.length > 0 && nodes.length > 0) {
+      // Create a map of nodeId -> instanceData for quick lookup
+      const nodeInstanceMap = new Map<string, any>();
+      instanceData.nodes?.forEach((n: any) => {
+        nodeInstanceMap.set(n.nodeId, n);
+      });
+
+      setEdges((currentEdges) => {
+        return currentEdges.map((edge) => {
+          const sourceInstance = nodeInstanceMap.get(edge.source);
+          const targetInstance = nodeInstanceMap.get(edge.target);
+
+          // An edge is used if both source and target nodes were executed
+          // and the target was executed after (or at the same time as) the source
+          const isUsed = 
+            sourceInstance?.startedAt && 
+            targetInstance?.startedAt &&
+            new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+
+          if (isUsed) {
+            return {
+              ...edge,
+              style: {
+                stroke: '#10b981', // green color
+                strokeWidth: 3,
+              },
+            };
+          }
+          // Reset style if edge was previously marked but is no longer used
+          if (edge.style?.stroke === '#10b981') {
+            const { style, ...rest } = edge;
+            return rest;
+          }
+          return edge;
+        });
+      });
+    }
+  }, [instanceData, isInstanceMode, setEdges]);
+
   // Handle node click for metadata
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     if (isInstanceMode && node.data?.instanceData) {
@@ -699,39 +740,43 @@ export default function WorkflowEditorPage() {
                 Saving...
               </span>
             )}
-            {/* Undo/Redo buttons */}
-            <button
-              onClick={handleUndo}
-              disabled={!canUndo}
-              style={{
-                padding: '8px 16px',
-                background: !canUndo ? '#d1d5db' : '#6366f1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: !canUndo ? 'not-allowed' : 'pointer',
-                opacity: !canUndo ? 0.6 : 1,
-              }}
-              title="Undo (Ctrl+Z)"
-            >
-              Undo
-            </button>
-            <button
-              onClick={handleRedo}
-              disabled={!canRedo}
-              style={{
-                padding: '8px 16px',
-                background: !canRedo ? '#d1d5db' : '#6366f1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: !canRedo ? 'not-allowed' : 'pointer',
-                opacity: !canRedo ? 0.6 : 1,
-              }}
-              title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
-            >
-              Redo
-            </button>
+            {/* Undo/Redo buttons - hidden in instance mode */}
+            {!isInstanceMode && (
+              <>
+                <button
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  style={{
+                    padding: '8px 16px',
+                    background: !canUndo ? '#d1d5db' : '#6366f1',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: !canUndo ? 'not-allowed' : 'pointer',
+                    opacity: !canUndo ? 0.6 : 1,
+                  }}
+                  title="Undo (Ctrl+Z)"
+                >
+                  Undo
+                </button>
+                <button
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  style={{
+                    padding: '8px 16px',
+                    background: !canRedo ? '#d1d5db' : '#6366f1',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: !canRedo ? 'not-allowed' : 'pointer',
+                    opacity: !canRedo ? 0.6 : 1,
+                  }}
+                  title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+                >
+                  Redo
+                </button>
+              </>
+            )}
             {!isInstanceMode && (
               <button
                 onClick={() => setShowAddNodeModal(true)}
@@ -904,6 +949,7 @@ export default function WorkflowEditorPage() {
               setEditingEdge(null);
               setEdgeConfig({ type: 'normal', condition: '' });
             }}
+            isReadOnly={isInstanceMode}
           />
         )}
 
@@ -917,6 +963,7 @@ export default function WorkflowEditorPage() {
               setEditingNode(null);
               setNodeConfig({ name: '', kind: 'noop', data: {} });
             }}
+            isReadOnly={isInstanceMode}
           />
         )}
 

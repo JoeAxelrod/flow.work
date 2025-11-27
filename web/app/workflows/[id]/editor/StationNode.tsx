@@ -244,7 +244,7 @@ export function StationNode({ data, id }: StationNodeProps) {
           </button>
         )}
         {!isInstanceMode && (
-          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', width: '56px', flexShrink: 0 }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
