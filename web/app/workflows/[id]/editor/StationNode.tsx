@@ -178,7 +178,8 @@ export function StationNode({ data, id }: StationNodeProps) {
       >
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
-            {data.label} {id.slice(-3)}
+            {data.label} 
+            {/* {id.slice(-3)} */}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>

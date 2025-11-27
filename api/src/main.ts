@@ -8,7 +8,7 @@ import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { EngineService } from './engine/engine.service';
+import { RabbitMQService } from './engine/rabbitmq.service';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap() {
@@ -38,7 +38,7 @@ async function bootstrap() {
   await app.listen(3001, '0.0.0.0');
 
   // Initialize RabbitMQ after server starts
-  const engine = app.get(EngineService);
-  await engine.initRabbit();
+  const rabbitMQ = app.get(RabbitMQService);
+  await rabbitMQ.init();
 }
 bootstrap();

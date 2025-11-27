@@ -37,3 +37,25 @@ export async function createWorkflow(name:string){
   return r.json();
 }
 
+export async function createInstance(workflowId:string, input?:any){
+  const r = await fetch(`${API}/workflows/${workflowId}`, { 
+    method:'POST', 
+    headers:{'content-type':'application/json'}, 
+    body: JSON.stringify({ workflowId, input: input || {} }) 
+  });
+  if (!r.ok) throw new Error(`Failed to create instance: ${r.statusText}`);
+  return r.json();
+}
+
+export async function getWorkflowInstances(workflowId:string){
+  const r = await fetch(`${API}/workflows/${workflowId}/instances`);
+  if (!r.ok) throw new Error(`Failed to fetch instances: ${r.statusText}`);
+  return r.json();
+}
+
+export async function getInstanceActivities(instanceId:string){
+  const r = await fetch(`${API}/instance/${instanceId}/activities`);
+  if (!r.ok) throw new Error(`Failed to fetch activities: ${r.statusText}`);
+  return r.json();
+}
+

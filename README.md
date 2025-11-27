@@ -1,223 +1,144 @@
 # Workflow E2E
 
-A complete workflow orchestration platform built with microservices architecture, featuring durable timers and HTTP actions.
+Workflow orchestration platform with visual editor, HTTP actions, durable timers, and webhook support.
 
 ## Architecture
 
-This project consists of three main services:
+- **API Service** (NestJS/Fastify): Workflow engine and REST API on port 3001
+- **Web Frontend** (Next.js): Visual workflow editor on port 3000
+- **PostgreSQL**: Stores workflows, nodes, edges, and activity executions
+- **RabbitMQ**: Message queue for durable timer delays using dead-letter exchange pattern
 
-- **API Service** (NestJS): Core workflow engine and REST API with integrated timer consumer
-- **Web Frontend** (Next.js): User interface for managing workflows
-- **Database** (PostgreSQL): Stores workflow definitions and executions
-- **RabbitMQ**: Message broker with delayed message exchange for durable timers
+## Components
 
-## Features
+### Node Types
+- `http`: Execute HTTP requests
+- `hook`: Webhook entry point (waits for external POST)
+- `timer`: Delay execution using RabbitMQ
+- `join`: Wait for multiple paths with conditions
+- `noop`: No operation
 
-- **Workflow Definition**: Create workflows with visual editor
-- **HTTP Actions**: Execute HTTP requests as workflow steps
-- **Durable Timers**: Wait for specified durations using RabbitMQ delayed message exchange
-- **Event-Driven**: Handle external events via webhooks
-- **REST API**: Full REST API for workflow management
-- **Microservices**: Scalable architecture with separate concerns
+### Edge Types
+- `normal`: Unconditional flow
+- `if`: Conditional flow (evaluates condition from activity state)
+- `loop`: Loop flow
 
 ## Quick Start
 
 ### Prerequisites
-
 - Docker and Docker Compose
 - Node.js 20+ (for local development)
 
-### 1. Clone and Setup
+### Start Infrastructure
 
-```bash
-git clone <repository-url>
-cd workflow-e2e
-```
-
-### 2. Start All Services
-
-```bash
-docker-compose up -d
-```
-
-This will start:
-- PostgreSQL database on port 5432
-- RabbitMQ on ports 5672 (AMQP) and 15672 (Management UI)
-- API service on port 3001
-- Web frontend on port 3000
-
-### 3. Access the Application
-
-- **Web UI**: http://localhost:3000
-- **API**: http://localhost:3001/api
-- **Database**: localhost:5432 (postgres/postgres)
-
-### 4. Initialize Database
-
-The database schema will be created automatically via TypeORM when the API service starts.
-
-## Development
-
-### Local Development Setup
-
-1. **Start infrastructure** (database and RabbitMQ):
 ```bash
 docker-compose up -d db rabbit
 ```
 
-2. **Install dependencies for each service**:
-```bash
-# API
-cd api && npm install
+This starts:
+- PostgreSQL on port 5432 (user: postgres, password: postgres, database: workflow)
+- RabbitMQ on ports 5672 (AMQP) and 15672 (Management UI, guest/guest)
+- DbGate on port 3003 (database admin UI)
 
-# Web Frontend
-cd ../web && npm install
+### Initialize Database
+
+```bash
+cd api
+npm install
+npm run db:init
 ```
 
-3. **Start services individually**:
-
+Or manually:
 ```bash
-# Terminal 1: API Service
-cd api && npm run dev
+docker compose run --rm api sh -lc "psql -h db -U postgres -d workflow -f ./schema.sql"
+```
 
-# Terminal 2: Web Frontend
-cd web && npm run dev
+### Run Services Locally
+
+**API Service:**
+```bash
+cd api
+npm install
+npm run start:dev
+```
+
+**Web Frontend:**
+```bash
+cd web
+npm install
+npm run dev
 ```
 
 ### Environment Variables
 
-#### API Service (.env)
-```env
+**API** (`api/.env`):
+```
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/workflow
-RABBIT_URL=amqp://guest:guest@rabbit:5672
+RABBIT_URL=amqp://guest:guest@localhost:5672
 PORT=3001
 ```
 
-#### Web Frontend (.env.local)
-```env
+**Web** (`web/.env.local`):
+```
 NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
-## API Documentation
+## API Endpoints
 
 ### Workflows
+- `GET /api/v1/workflows` - List all workflows
+- `POST /api/v1/workflows` - Create workflow (body: `{ name: string }`)
+- `GET /api/v1/workflows/:id` - Get workflow definition with nodes and edges
+- `POST /api/v1/workflows/:id` - Execute workflow (body: initial payload for first node)
+- `POST /api/v1/workflows/import` - Import workflow definition (nodes, edges, actions)
 
-- `GET /api/workflows` - List all workflows
-- `POST /api/workflows` - Create a new workflow
-- `GET /api/workflows/:id` - Get workflow by ID
-- `POST /api/workflows/:id/execute` - Execute a workflow
+### Webhooks
+- `POST /api/v1/hook/workflow/:workflowId/node/:nodeId` - Trigger specific hook node (body: `{ instanceId: string, ...data }`)
+- `POST /api/v1/hook/workflow/:workflowId` - General hook endpoint (body: `{ workflow_node: string, instanceId: string, ...data }`)
 
-### Events
+## Database Schema
 
-- `POST /api/events/timer` - Handle timer completion events
-- `POST /api/events/webhook` - Handle webhook events
+- `_workflow`: Workflow definitions (id, name, created_at)
+- `_node`: Workflow nodes (id, workflow_id, label, kind, position, data)
+- `_edge`: Connections between nodes (source_id, target_id, kind, condition)
+- `_activity`: Execution history (instance_id, workflow_id, node_id, status, input, output, error)
 
-### Example Workflow Definition
+## Timer Implementation
 
-```json
-{
-  "name": "Example Workflow",
-  "definition": {
-    "steps": [
-      {
-        "id": "http-step",
-        "type": "http",
-        "config": {
-          "url": "https://api.example.com/data",
-          "method": "GET"
-        }
-      },
-      {
-        "id": "timer-step",
-        "type": "timer",
-        "config": {
-          "waitTime": 5000
-        }
-      }
-    ]
-  }
-}
-```
+Timers use RabbitMQ dead-letter exchange:
+1. Timer node publishes message to `timer.delay` queue with TTL expiration
+2. After expiration, message dead-letters to `timer.fired` queue
+3. Consumer processes fired messages and resumes workflow execution
 
-## Workflow Actions
+## Workflow Execution
 
-### HTTP Action
+1. Create workflow instance: `POST /api/v1/workflows/:id` returns `instanceId`
+2. Engine executes nodes sequentially based on edges
+3. Each node execution creates an `_activity` record
+4. Node output becomes input for next node
+5. Conditional edges evaluate expressions like `path.to.value = "expected"`
+6. Timer nodes pause execution until RabbitMQ message fires
+7. Hook nodes pause until external POST to webhook endpoint
 
-Makes HTTP requests to external APIs.
+## Development
 
-**Configuration:**
-```json
-{
-  "url": "https://api.example.com/endpoint",
-  "method": "POST",
-  "headers": {
-    "Authorization": "Bearer token"
-  },
-  "body": {
-    "key": "value"
-  }
-}
-```
-
-### Timer Action
-
-Waits for a specified duration. Uses RabbitMQ delayed message exchange for durability.
-
-**Configuration:**
-```json
-{
-  "waitTime": 10000  // milliseconds
-}
-```
-
-## Testing
-
-### API Tests
+### Database Reset
 ```bash
-cd api
-npm run test
+.\reset-db.ps1
 ```
 
-### E2E Tests
+### Run All Services
 ```bash
-cd api
-npm run test:e2e
+.\run-all.ps1
 ```
 
-## Deployment
+## Project Structure
 
-### Production Build
-
-```bash
-# Build all services
-docker-compose build
-
-# Start in production mode
-docker-compose up -d
-```
-
-### Scaling
-
-- **API Service**: Can be scaled horizontally behind a load balancer
-- **Database**: Use connection pooling and read replicas for high load
-- **RabbitMQ**: Can be clustered for high availability
-
-## Monitoring
-
-- Add health checks to all services
-- Monitor RabbitMQ queue depth for timer events
-- Track workflow execution metrics
-- Set up logging aggregation
-- Access RabbitMQ Management UI at http://localhost:15672 (guest/guest)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-MIT License
+- `api/src/`: NestJS backend
+  - `engine/`: Workflow execution engine
+  - `workflows/`: Workflow CRUD operations
+  - `hooks/`: Webhook endpoints
+  - `actions/`: Node action handlers
+- `web/app/`: Next.js frontend
+  - `workflows/[id]/editor/`: Visual workflow editor (React Flow)
+- `schema.sql`: Database schema definition

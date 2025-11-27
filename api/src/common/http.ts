@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 export async function httpCall(cfg:any, input:any, timeoutMs:number) {
   const url = cfg.url || input?.url;
   const method = (cfg.method || 'POST').toUpperCase();

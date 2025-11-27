@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';
 import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';
+import { useToast } from '../../../components/ToastContext';
 
 import ReactFlow, {
   addEdge,
@@ -12,6 +13,7 @@ import ReactFlow, {
   useEdgesState,
   Connection,
   Edge,
+  Node,
   MarkerType,
   ConnectionMode,            // ⬅️ add this
 } from 'reactflow';
@@ -43,6 +45,7 @@ const edgeTypes = {};
 export default function WorkflowEditorPage() {
   const params = useParams();
   const workflowId = params.id as string;
+  const toast = useToast();
 
   // State
   const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
@@ -78,6 +81,15 @@ export default function WorkflowEditorPage() {
   const [showSaveToast, setShowSaveToast] = useState(false);
   const isInitialLoadRef = useRef(true);
   const isServerSyncRef = useRef(false);
+  
+  // Undo/Redo history
+  const historyRef = useRef<Array<{ nodes: Node[]; edges: Edge[] }>>([]);
+  const historyIndexRef = useRef(-1);
+  const isUndoRedoRef = useRef(false);
+  const historyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const MAX_HISTORY = 50;
 
   
 
@@ -108,15 +120,132 @@ export default function WorkflowEditorPage() {
     fetchWorkflow();
   }, [fetchWorkflow]);
 
+    // Update undo/redo button states
+    const updateUndoRedoState = useCallback(() => {
+      setCanUndo(historyIndexRef.current > 0);
+      setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+    }, []);
+
   // Mark initial load as complete after first render
   useEffect(() => {
     if (workflowData && nodes.length > 0) {
       // Small delay to ensure all state is set
       setTimeout(() => {
         isInitialLoadRef.current = false;
+        // Initialize history with initial state
+        historyRef.current = [{ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }];
+        historyIndexRef.current = 0;
+        updateUndoRedoState();
       }, 100);
     }
-  }, [workflowData, nodes.length]);
+  }, [workflowData, nodes.length, edges.length, updateUndoRedoState]);
+  
+  // Save state to history (debounced to avoid too many entries)
+  const saveToHistory = useCallback(() => {
+    if (isInitialLoadRef.current || isUndoRedoRef.current || isServerSyncRef.current) {
+      return;
+    }
+    
+    const currentState = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+    
+    // Remove any history after current index (when user makes new change after undo)
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+    }
+    
+    // Add new state to history
+    historyRef.current.push(currentState);
+    
+    // Limit history size
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current.shift(); // [1, 2, 3] -> [2, 3]
+    }
+    historyIndexRef.current++;
+    updateUndoRedoState();
+  }, [nodes, edges, updateUndoRedoState]);
+  
+  // Debounced history save
+  const debouncedSaveToHistory = useCallback(() => {
+    if (historyTimeoutRef.current) {
+      clearTimeout(historyTimeoutRef.current);
+    }
+    historyTimeoutRef.current = setTimeout(() => {
+      saveToHistory();
+    }, 300);
+  }, [saveToHistory]);
+  
+  // Undo function
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current > 0) {
+      isUndoRedoRef.current = true;
+      historyIndexRef.current--;
+      const previousState = historyRef.current[historyIndexRef.current];
+      setNodes(previousState.nodes);
+      setEdges(previousState.edges);
+      updateUndoRedoState();
+      setTimeout(() => {
+        isUndoRedoRef.current = false;
+      }, 100);
+    }
+  }, [setNodes, setEdges, updateUndoRedoState]);
+  
+  // Redo function
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      isUndoRedoRef.current = true;
+      historyIndexRef.current++;
+      const nextState = historyRef.current[historyIndexRef.current];
+      setNodes(nextState.nodes);
+      setEdges(nextState.edges);
+      updateUndoRedoState();
+      setTimeout(() => {
+        isUndoRedoRef.current = false;
+      }, 100);
+    }
+  }, [setNodes, setEdges, updateUndoRedoState]);
+  
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl+Z (undo) or Ctrl+Y (redo) or Ctrl+Shift+Z (redo)
+      if (event.ctrlKey || event.metaKey) {
+        if (event.key === 'z' && !event.shiftKey) {
+          event.preventDefault();
+          handleUndo();
+        } else if (event.key === 'y' || (event.key === 'z' && event.shiftKey)) {
+          event.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleUndo, handleRedo]);
+  
+  // Save to history when nodes or edges change
+  useEffect(() => {
+    if (!workflowData || isInitialLoadRef.current) {
+      return;
+    }
+    
+    if (isUndoRedoRef.current || isServerSyncRef.current) {
+      return;
+    }
+    
+    debouncedSaveToHistory();
+    
+    return () => {
+      if (historyTimeoutRef.current) {
+        clearTimeout(historyTimeoutRef.current);
+      }
+    };
+  }, [nodes, edges, debouncedSaveToHistory, workflowData]);
 
   // Listen for edit and delete node events from custom node component
   useEffect(() => {
@@ -197,7 +326,7 @@ export default function WorkflowEditorPage() {
       console.log(1)
       
       if (sourceNode?.data.kind === 'hook' || targetNode?.data.kind === 'hook') {
-        alert('Hook nodes cannot have edges connected to them');
+        toast.showToast('Hook nodes cannot have edges connected to them', 'warning');
         return;
       }
       
@@ -340,6 +469,7 @@ export default function WorkflowEditorPage() {
   const autoSave = useCallback(async () => {
     if (isInitialLoadRef.current || !workflowData) return;
   
+    const saveStartTime = Date.now();
     setIsSaving(true);
     try {
       const def = createWorkflowDefinition(
@@ -388,7 +518,17 @@ export default function WorkflowEditorPage() {
     } catch (err: any) {
       console.error('Auto-save failed:', err);
     } finally {
-      setIsSaving(false);
+      // Ensure minimum 600ms display time for "Saving..." message
+      const elapsedTime = Date.now() - saveStartTime;
+      const remainingTime = Math.max(0, 600 - elapsedTime);
+      
+      if (remainingTime > 0) {
+        setTimeout(() => {
+          setIsSaving(false);
+        }, remainingTime);
+      } else {
+        setIsSaving(false);
+      }
     }
   }, [workflowData, nodes, edges, setNodes, setEdges]);
   
@@ -480,6 +620,39 @@ export default function WorkflowEditorPage() {
                 Saving...
               </span>
             )}
+            {/* Undo/Redo buttons */}
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              style={{
+                padding: '8px 16px',
+                background: !canUndo ? '#d1d5db' : '#6366f1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: !canUndo ? 'not-allowed' : 'pointer',
+                opacity: !canUndo ? 0.6 : 1,
+              }}
+              title="Undo (Ctrl+Z)"
+            >
+              Undo
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={!canRedo}
+              style={{
+                padding: '8px 16px',
+                background: !canRedo ? '#d1d5db' : '#6366f1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: !canRedo ? 'not-allowed' : 'pointer',
+                opacity: !canRedo ? 0.6 : 1,
+              }}
+              title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+            >
+              Redo
+            </button>
             <button
               onClick={() => setShowAddNodeModal(true)}
               style={{
@@ -565,41 +738,47 @@ export default function WorkflowEditorPage() {
         )}
 
         {/* Save Toast Notification */}
-        <Snackbar
+        {/* <Snackbar
           open={showSaveToast}
-          autoHideDuration={2000}
+          autoHideDuration={1500}
           onClose={() => setShowSaveToast(false)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           TransitionComponent={Slide}
           TransitionProps={{ direction: 'up' } as SlideProps}
           sx={{
             '& .MuiSnackbar-root': {
-              bottom: 24,
+              bottom: 16,
             },
           }}
         >
           <Alert
             onClose={() => setShowSaveToast(false)}
             severity="success"
-            icon={<CheckCircleIcon />}
+            icon={<CheckCircleIcon sx={{ fontSize: '16px' }} />}
             sx={{
               backgroundColor: 'rgba(16, 185, 129, 0.95)',
               color: 'white',
+              padding: '6px 12px',
+              minWidth: 'auto',
               '& .MuiAlert-icon': {
                 color: 'white',
+                fontSize: '16px',
+                marginRight: '8px',
               },
               '& .MuiAlert-message': {
                 color: 'white',
                 fontWeight: 500,
+                fontSize: '0.75rem',
+                padding: 0,
               },
-              borderRadius: 2,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              borderRadius: 1,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
               backdropFilter: 'blur(10px)',
             }}
           >
             Workflow saved
           </Alert>
-        </Snackbar>
+        </Snackbar> */}
       </div>
     </WorkflowEditorProvider>
   );

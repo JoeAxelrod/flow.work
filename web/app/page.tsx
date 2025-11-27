@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { listWorkflows, createWorkflow } from "./api-client";
+import { useToast } from "./components/ToastContext";
 import {
   Box,
   Container,
@@ -146,6 +147,7 @@ const StyledButton = styled(Button)(({ theme }) => ({
 export default function Page() {
   const router = useRouter();
   const theme = useTheme();
+  const toast = useToast();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -168,7 +170,7 @@ export default function Page() {
 
   const handleCreateWorkflow = async () => {
     if (!newWorkflow.name) {
-      alert("Please provide a name");
+      toast.showToast("Please provide a name", "warning");
       return;
     }
 
@@ -178,7 +180,7 @@ export default function Page() {
       setNewWorkflow({ name: "" });
       router.push(`/workflows/${created.id}/editor`);
     } catch (error: any) {
-      alert(`Failed to create workflow: ${error.message}`);
+      toast.showToast(`Failed to create workflow: ${error.message}`, "error");
     }
   };
 

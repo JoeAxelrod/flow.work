@@ -33,14 +33,26 @@ export class WorkflowsController {
     return workflow;
   }
 
+  // get instances for a workflow
+  @Get(':id/instances')
+  async getInstances(@Param('id') id: string) {
+    return this.svc.getInstances(id);
+  }
+
   // start by API: POST /api/v1/workflows/:id  body provides url+data for S1
   @Post(':id')
   async start(@Param('id') id:string, @Body() body:any) {
-    // Get first node by created_at order
+    // Get first node (node with no incoming edges)
+    console.log("111111111111111111111111111111111111111111111111111")
     const nodeId = await this.svc.firstNodeId(id);
     if (!nodeId) throw new Error('start node not found');
-    const instanceId = this.eng.newInstance();
-    await this.eng.chain(instanceId, nodeId, body);
-    return { instanceId };
+    
+    // Create instance record in database
+    const instance = await this.eng.createInstance(id, body || {});
+    
+    // Create activity and run it
+    const activity = await this.eng.createAndRunActivity(instance.id, nodeId, body || {});
+    
+    return { instanceId: instance.id, activityId: activity.id };
   }
 }

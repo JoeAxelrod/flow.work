@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { EngineService } from '../engine/engine.service';
+import { RabbitMQService } from '../engine/rabbitmq.service';
 
 @Injectable()
 export class TimeProducerAction {
-  constructor(private engineService: EngineService) {}
+  constructor(private rabbitMQ: RabbitMQService) {}
 
   async execute(action: any, context: any) {
     const { waitTime } = action.config;
 
-    // Send timer event to Kafka for durable wait
-    await this.engineService.sendTimerEvent(context.workflowId, waitTime);
+    // Send timer event via RabbitMQ for durable wait
+    await this.rabbitMQ.publishTimer(waitTime, { workflowId: context.workflowId, waitTime });
 
     return {
       success: true,

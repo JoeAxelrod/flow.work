@@ -47,6 +47,7 @@ export class WorkflowsService {
 
       // nodes - let DB generate IDs, map frontend temp IDs to DB IDs
       const frontendIdToDbId = new Map<string, string>();
+      const keptNodeIds = new Set<string>(); // Track which node IDs we're keeping
       let nodeCount = 0;
       for (const n of (def.nodes ?? def.stations ?? [])) {
         const pos  = JSON.stringify(n.position ?? {});
@@ -95,11 +96,13 @@ export class WorkflowsService {
         if (n.id) {
           frontendIdToDbId.set(n.id, dbId);
         }
+        keptNodeIds.add(dbId);
         nodeCount++;
       }
       this.log.log(`_node upserted count=${nodeCount}`);
 
       // edges - use database-generated node IDs
+      const keptEdgeKeys = new Set<string>(); // Track which edges we're keeping (source_id:target_id)
       let edgeCount = 0;
       for (const e of (def.edges ?? [])) {
         const frontendSourceId = e.source ?? e.from;
@@ -129,10 +132,79 @@ export class WorkflowsService {
              target_handle = EXCLUDED.target_handle`,
           [sourceId, targetId, kind, condition, sourceHandle, targetHandle]
         );
+        keptEdgeKeys.add(`${sourceId}:${targetId}`);
         edgeCount++;
       }
 
       this.log.log(`_edge inserted count=${edgeCount}`);
+
+      // Delete edges that exist in DB but are not in the incoming definition
+      // Only delete edges where both source and target are nodes in this workflow
+      if (keptEdgeKeys.size > 0) {
+        // Build VALUES clause for edges to keep
+        const keptEdgePairs = Array.from(keptEdgeKeys).map(key => {
+          const [source, target] = key.split(':');
+          return [source, target];
+        });
+        
+        // Use NOT EXISTS to delete edges not in our kept set
+        const valuesClause = keptEdgePairs.map((_, idx) => 
+          `($${idx * 2 + 2}::uuid, $${idx * 2 + 3}::uuid)`
+        ).join(', ');
+        
+        const params = [workflowId, ...keptEdgePairs.flat()];
+        const result = await client.query(
+          `DELETE FROM public._edge
+           WHERE source_id IN (SELECT id FROM public._node WHERE workflow_id = $1)
+             AND target_id IN (SELECT id FROM public._node WHERE workflow_id = $1)
+             AND NOT EXISTS (
+               SELECT 1 FROM (VALUES ${valuesClause}) AS kept(source_id, target_id)
+               WHERE kept.source_id = public._edge.source_id 
+                 AND kept.target_id = public._edge.target_id
+             )`,
+          params
+        );
+        const deletedEdgeCount = result.rowCount ?? 0;
+        if (deletedEdgeCount > 0) {
+          this.log.log(`_edge deleted count=${deletedEdgeCount}`);
+        }
+      } else {
+        // If no edges to keep, delete all edges for nodes in this workflow
+        const result = await client.query(
+          `DELETE FROM public._edge
+           WHERE source_id IN (SELECT id FROM public._node WHERE workflow_id = $1)
+             OR target_id IN (SELECT id FROM public._node WHERE workflow_id = $1)`,
+          [workflowId]
+        );
+        const deletedEdgeCount = result.rowCount ?? 0;
+        if (deletedEdgeCount > 0) {
+          this.log.log(`_edge deleted count=${deletedEdgeCount}`);
+        }
+      }
+
+      // Delete nodes that exist in DB but are not in the incoming definition
+      // Do this after edges to avoid foreign key constraint issues
+      if (keptNodeIds.size > 0) {
+        const result = await client.query(
+          `DELETE FROM public._node
+           WHERE workflow_id = $1 AND id != ALL($2::uuid[])`,
+          [workflowId, Array.from(keptNodeIds)]
+        );
+        const deletedNodeCount = result.rowCount ?? 0;
+        if (deletedNodeCount > 0) {
+          this.log.log(`_node deleted count=${deletedNodeCount}`);
+        }
+      } else {
+        // If no nodes to keep, delete all nodes for this workflow
+        const result = await client.query(
+          `DELETE FROM public._node WHERE workflow_id = $1`,
+          [workflowId]
+        );
+        const deletedNodeCount = result.rowCount ?? 0;
+        if (deletedNodeCount > 0) {
+          this.log.log(`_node deleted count=${deletedNodeCount}`);
+        }
+      }
 
       await client.query('COMMIT');
       this.log.log(`import done in ${Date.now() - t0}ms`);
@@ -161,10 +233,12 @@ export class WorkflowsService {
 
   async firstNodeId(workflowId: string) {
     const { rows } = await this.db.query(
-      `SELECT s.id
-       FROM public._node s
-       WHERE s.workflow_id = $1
-       ORDER BY s.created_at NULLS LAST
+      `SELECT n.id
+       FROM public._node n
+       WHERE n.workflow_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM public._edge e WHERE e.target_id = n.id
+         )
        LIMIT 1`,
       [workflowId]
     );
@@ -261,5 +335,56 @@ export class WorkflowsService {
       nodes: Array.from(nodeMap.values()),
       edges: Array.from(edgeMap.values()),
     };
+  }
+
+  async getInstances(workflowId: string) {
+    const { rows } = await this.db.query(
+      `SELECT id, workflow_id, status, input, output, error, started_at, finished_at
+       FROM public._instance
+       WHERE workflow_id = $1
+       ORDER BY started_at DESC`,
+      [workflowId]
+    );
+    
+    // Fetch activities (nodes) for each instance
+    const instancesWithNodes = await Promise.all(
+      rows.map(async (row: any) => {
+        const { rows: activityRows } = await this.db.query(
+          `SELECT a.*, s.label as node_name, s.kind as node_kind
+           FROM public._activity a
+           JOIN public._node s ON s.id = a.node_id
+           WHERE a.instance_id = $1
+           ORDER BY a.created_at ASC`,
+          [row.id]
+        );
+        
+        return {
+          id: row.id,
+          workflowId: row.workflow_id,
+          status: row.status,
+          input: row.input,
+          output: row.output,
+          error: row.error,
+          startedAt: row.started_at,
+          finishedAt: row.finished_at,
+          nodes: activityRows.map((activity: any) => ({
+            id: activity.id,
+            nodeId: activity.node_id,
+            nodeName: activity.node_name,
+            nodeKind: activity.node_kind,
+            status: activity.status,
+            input: activity.input,
+            output: activity.output,
+            error: activity.error,
+            startedAt: activity.started_at,
+            finishedAt: activity.finished_at,
+            createdAt: activity.created_at,
+            updatedAt: activity.updated_at,
+          })),
+        };
+      })
+    );
+    
+    return instancesWithNodes;
   }
 }

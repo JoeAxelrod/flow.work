@@ -2,15 +2,19 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- enums
 DO $$ BEGIN
-  CREATE TYPE node_kind  AS ENUM ('http','hook','timer','join','noop');
+  CREATE TYPE node_kind AS ENUM ('http','hook','timer','join','noop');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN
-  CREATE TYPE edge_kind     AS ENUM ('normal','if', 'loop');
+  CREATE TYPE edge_kind AS ENUM ('normal','if','loop');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN
   CREATE TYPE activity_status AS ENUM ('created','running','success','failed','skipped');
+EXCEPTION WHEN duplicate_object THEN END $$;
+
+DO $$ BEGIN
+  CREATE TYPE instance_status AS ENUM ('running','success','failed','cancelled');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 -- workflows
@@ -25,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public._node (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workflow_id UUID NOT NULL REFERENCES public._workflow(id) ON DELETE CASCADE,
   label       TEXT NOT NULL,                 -- was "name"
-  kind        node_kind NOT NULL,         -- explicit column
+  kind        node_kind NOT NULL,           -- explicit column
   position    JSONB NOT NULL DEFAULT '{}'::jsonb,
   data        JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -47,10 +51,24 @@ CREATE TABLE IF NOT EXISTS public._edge (
 CREATE INDEX IF NOT EXISTS idx_edge_source ON public._edge(source_id);
 CREATE INDEX IF NOT EXISTS idx_edge_target ON public._edge(target_id);
 
+-- workflow instances
+CREATE TABLE IF NOT EXISTS public._instance (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workflow_id UUID NOT NULL REFERENCES public._workflow(id) ON DELETE CASCADE,
+  status      instance_status NOT NULL DEFAULT 'running',
+  input       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  output      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  error       TEXT,
+  started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_instance_workflow ON public._instance(workflow_id);
+
 -- activities (no action_id)
 CREATE TABLE IF NOT EXISTS public._activity (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  instance_id UUID NOT NULL,
+  instance_id UUID NOT NULL REFERENCES public._instance(id) ON DELETE CASCADE,
   workflow_id UUID NOT NULL REFERENCES public._workflow(id) ON DELETE CASCADE,
   node_id     UUID NOT NULL REFERENCES public._node(id),
   status      activity_status NOT NULL DEFAULT 'created',
@@ -62,9 +80,5 @@ CREATE TABLE IF NOT EXISTS public._activity (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
 CREATE INDEX IF NOT EXISTS idx_activity_instance ON public._activity(instance_id);
-
-ALTER TABLE public._edge
-  ADD COLUMN source_handle TEXT NULL,
-  ADD COLUMN target_handle TEXT NULL;
-

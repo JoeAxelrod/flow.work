@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background -->
+  <rect width="64" height="64" fill="#6366f1" rx="12"/>
+  
+  <!-- Workflow nodes - simplified for small sizes -->
+  <!-- Top-left node -->
+  <circle cx="18" cy="20" r="5" fill="#ffffff"/>
+  <!-- Top-right node -->
+  <circle cx="46" cy="20" r="5" fill="#ffffff"/>
+  <!-- Bottom center node -->
+  <circle cx="32" cy="44" r="5" fill="#ffffff"/>
+  
+  <!-- Connection lines - thicker for visibility -->
+  <line x1="23" y1="20" x2="41" y2="20" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <line x1="32" y1="25" x2="32" y2="39" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <line x1="41" y1="23" x2="35" y2="39" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Arrow heads -->
+  <path d="M41 20 L47 17 L47 23 Z" fill="#ffffff"/>
+  <path d="M32 39 L28 45 L36 45 Z" fill="#ffffff"/>
+</svg>
+

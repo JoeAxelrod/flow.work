@@ -3,7 +3,45 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { listWorkflows, createWorkflow } from '../api-client';
+import { listWorkflows, createWorkflow, createInstance } from '../api-client';
+import { useToast } from '../components/ToastContext';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  AppBar,
+  Toolbar,
+  IconButton,
+  Avatar,
+  Chip,
+  LinearProgress,
+  Paper,
+  Divider,
+  Stack,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  useTheme,
+  alpha,
+  styled,
+  List,
+  ListItem,
+} from '@mui/material';
+import {
+  AccountTree as WorkflowIcon,
+  Add as AddIcon,
+  Edit as EditIcon,
+  PlayArrow as PlayIcon,
+  Close as CloseIcon,
+  CalendarToday as CalendarIcon,
+  List as ListIcon,
+} from '@mui/icons-material';
+import { motion } from 'framer-motion';
 
 interface Workflow {
   id: string;
@@ -11,8 +49,43 @@ interface Workflow {
   createdAt: string;
 }
 
+// Styled Components
+const GlowCard = styled(Card)(({ theme }) => ({
+  position: 'relative',
+  overflow: 'visible',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  '&:hover': {
+    transform: 'translateY(-4px)',
+    boxShadow: `0 12px 24px ${alpha(theme.palette.primary.main, 0.2)}`,
+  },
+}));
+
+const StyledButton = styled(Button)(({ theme }) => ({
+  background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+  borderRadius: '50px',
+  padding: '10px 24px',
+  textTransform: 'none',
+  fontWeight: 600,
+  boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    transform: 'translateY(-2px)',
+    boxShadow: `0 8px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
+    background: `linear-gradient(45deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
+  },
+}));
+
+const GradientText = styled(Typography)(({ theme }) => ({
+  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+}));
+
 export default function WorkflowsPage() {
   const router = useRouter();
+  const theme = useTheme();
+  const toast = useToast();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -35,7 +108,7 @@ export default function WorkflowsPage() {
 
   const handleCreateWorkflow = async () => {
     if (!newWorkflow.name) {
-      alert('Please provide a name');
+      toast.showToast('Please provide a name', 'warning');
       return;
     }
 
@@ -43,131 +116,306 @@ export default function WorkflowsPage() {
       const created = await createWorkflow(newWorkflow.name);
       setShowCreateModal(false);
       setNewWorkflow({ name: '' });
-      // Redirect to editor
       router.push(`/workflows/${created.id}/editor`);
     } catch (error: any) {
-      alert(`Failed to create workflow: ${error.message}`);
+      toast.showToast(`Failed to create workflow: ${error.message}`, 'error');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
-          <p className="mt-4 text-gray-600">Loading workflows...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleCreateInstance = async (workflowId: string) => {
+    try {
+      const instance = await createInstance(workflowId, {});
+      toast.showToast(`Instance created successfully! Instance ID: ${instance.id}`, 'success');
+    } catch (error: any) {
+      toast.showToast(`Failed to create instance: ${error.message}`, 'error');
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-        <div className="md:flex md:items-center md:justify-between">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
-              Workflows
-            </h2>
-          </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+      {/* AppBar */}
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+          backdropFilter: 'blur(10px)',
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+        }}
+      >
+        <Toolbar>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}>
+            <Avatar
+              sx={{
+                bgcolor: 'white',
+                color: theme.palette.primary.main,
+                width: 40,
+                height: 40,
+              }}
             >
-              Create Workflow
-            </button>
-          </div>
-        </div>
+              <WorkflowIcon />
+            </Avatar>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{
+                fontWeight: 700,
+                color: 'white',
+              }}
+            >
+              Workflows
+            </Typography>
+          </Box>
+          <Button
+            component={Link}
+            href="/"
+            sx={{
+              color: 'white',
+              fontWeight: 600,
+              mr: 2,
+              '&:hover': {
+                bgcolor: alpha(theme.palette.common.white, 0.1),
+              },
+            }}
+          >
+            Home
+          </Button>
+          <StyledButton
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setShowCreateModal(true)}
+            sx={{
+              bgcolor: 'white',
+              color: theme.palette.primary.main,
+              '&:hover': {
+                bgcolor: alpha(theme.palette.common.white, 0.9),
+              },
+            }}
+          >
+            Create Workflow
+          </StyledButton>
+        </Toolbar>
+      </AppBar>
 
-        <div className="mt-8">
-          <div className="bg-white shadow overflow-hidden sm:rounded-md">
-            <ul className="divide-y divide-gray-200">
-              {workflows.length === 0 ? (
-                <li className="px-6 py-4">
-                  <p className="text-gray-500 text-center">No workflows found. Create your first workflow!</p>
-                </li>
-              ) : (
-                workflows.map((workflow) => (
-                  <li key={workflow.id}>
-                    <div className="px-4 py-4 sm:px-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <p className="text-sm font-medium text-indigo-600 truncate">
-                            {workflow.name}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                          <Link
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        {loading ? (
+          <Card sx={{ p: 8, textAlign: 'center' }}>
+            <LinearProgress sx={{ mb: 2 }} />
+            <Typography variant="body1" color="text.secondary">
+              Loading workflows...
+            </Typography>
+          </Card>
+        ) : workflows.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card
+              sx={{
+                p: 8,
+                textAlign: 'center',
+                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
+                border: `2px dashed ${alpha(theme.palette.primary.main, 0.3)}`,
+              }}
+            >
+              <WorkflowIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
+              <Typography variant="h5" sx={{ mb: 1, fontWeight: 600 }}>
+                No workflows found
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+                Create your first workflow to get started!
+              </Typography>
+              <StyledButton
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setShowCreateModal(true)}
+              >
+                Create Workflow
+              </StyledButton>
+            </Card>
+          </motion.div>
+        ) : (
+          <Box>
+            <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <GradientText variant="h4" sx={{ fontWeight: 800 }}>
+                All Workflows
+              </GradientText>
+              <Typography variant="body2" color="text.secondary">
+                {workflows.length} {workflows.length === 1 ? 'workflow' : 'workflows'}
+              </Typography>
+            </Box>
+
+            <Stack spacing={2}>
+              {workflows.map((workflow, index) => (
+                <motion.div
+                  key={workflow.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <GlowCard>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                          <Avatar
+                            sx={{
+                              bgcolor: theme.palette.primary.main,
+                              width: 56,
+                              height: 56,
+                            }}
+                          >
+                            <WorkflowIcon />
+                          </Avatar>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: 700,
+                                color: 'text.primary',
+                                mb: 0.5,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {workflow.name}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                              <CalendarIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                              <Typography variant="body2" color="text.secondary">
+                                Created {new Date(workflow.createdAt).toLocaleDateString()}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Box>
+                        <Stack direction="row" spacing={2} sx={{ ml: 2, flexWrap: 'wrap' }}>
+                          <Button
+                            component={Link}
+                            href={`/workflows/${workflow.id}/instances`}
+                            variant="outlined"
+                            startIcon={<ListIcon />}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 600,
+                              borderColor: theme.palette.info.main,
+                              color: theme.palette.info.main,
+                              '&:hover': {
+                                borderColor: theme.palette.info.dark,
+                                bgcolor: alpha(theme.palette.info.main, 0.05),
+                              },
+                            }}
+                          >
+                            View Instances
+                          </Button>
+                          <Button
+                            component={Link}
                             href={`/workflows/${workflow.id}/editor`}
-                            className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                            variant="outlined"
+                            startIcon={<EditIcon />}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 600,
+                              borderColor: theme.palette.primary.main,
+                              color: theme.palette.primary.main,
+                              '&:hover': {
+                                borderColor: theme.palette.primary.dark,
+                                bgcolor: alpha(theme.palette.primary.main, 0.05),
+                              },
+                            }}
                           >
                             Edit
-                          </Link>
-                        </div>
-                      </div>
-                      <div className="mt-2 sm:flex sm:justify-between">
-                        <div className="sm:flex">
-                          <p className="flex items-center text-sm text-gray-500">
-                            Created {new Date(workflow.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        </div>
-      </div>
+                          </Button>
+                          <Button
+                            variant="contained"
+                            startIcon={<PlayIcon />}
+                            onClick={() => handleCreateInstance(workflow.id)}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 600,
+                              bgcolor: theme.palette.success.main,
+                              '&:hover': {
+                                bgcolor: theme.palette.success.dark,
+                              },
+                            }}
+                          >
+                            Create Instance
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </CardContent>
+                  </GlowCard>
+                </motion.div>
+              ))}
+            </Stack>
+          </Box>
+        )}
+      </Container>
 
-      {/* Create Workflow Modal */}
-      {showCreateModal && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div
-            className="bg-white rounded-lg p-6 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
+      {/* Create Workflow Dialog */}
+      <Dialog
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
+            backdropFilter: 'blur(10px)',
+          },
+        }}
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+              Create New Workflow
+            </Typography>
+            <IconButton onClick={() => setShowCreateModal(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Workflow Name"
+            placeholder="My Awesome Workflow"
+            value={newWorkflow.name}
+            onChange={(e) => setNewWorkflow({ ...newWorkflow, name: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleCreateWorkflow();
+              }
+            }}
+            sx={{
+              mt: 2,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+              },
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button
+            onClick={() => {
+              setShowCreateModal(false);
+              setNewWorkflow({ name: '' });
+            }}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
           >
-            <h3 className="text-lg font-bold mb-4">Create New Workflow</h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Name
-              </label>
-              <input
-                type="text"
-                value={newWorkflow.name}
-                onChange={(e) => setNewWorkflow({ ...newWorkflow, name: e.target.value })}
-                placeholder="My Workflow"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setNewWorkflow({ name: '' });
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateWorkflow}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+            Cancel
+          </Button>
+          <StyledButton
+            variant="contained"
+            onClick={handleCreateWorkflow}
+            startIcon={<AddIcon />}
+            sx={{ textTransform: 'none' }}
+          >
+            Create
+          </StyledButton>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

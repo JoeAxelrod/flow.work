@@ -11,7 +11,8 @@ workflow-e2e/
 │   │   │
 │   │   ├── common/               # Shared utilities
 │   │   │   ├── http.ts           # HTTP client utilities
-│   │   │   └── logging.interceptor.ts  # Global request logging
+│   │   │   ├── logging.interceptor.ts  # Global request logging
+│   │   │   └── validation.ts     # Validation utilities
 │   │   │
 │   │   ├── engine/               # Workflow engine
 │   │   │   ├── engine.controller.ts
@@ -50,32 +51,41 @@ workflow-e2e/
 │   │   ├── api-client.ts         # API client utilities
 │   │   ├── globals.css
 │   │   ├── layout.tsx
+│   │   ├── mui-theme-provider.tsx  # Material-UI theme provider
 │   │   ├── page.tsx              # Home page
 │   │   └── workflows/            # Workflow pages
 │   │       ├── [id]/             # Dynamic route
 │   │       │   └── editor/
-│   │       │       └── page.tsx  # Workflow editor
+│   │       │       ├── EdgeModal.tsx      # Edge configuration modal
+│   │       │       ├── helpers.ts         # Editor helper functions
+│   │       │       ├── NodeModal.tsx      # Node configuration modal
+│   │       │       ├── page.tsx           # Workflow editor page
+│   │       │       ├── StationNode.tsx    # Station node component
+│   │       │       ├── types.ts           # TypeScript type definitions
+│   │       │       └── WorkflowEditorContext.tsx  # Editor context provider
 │   │       └── page.tsx          # Workflows list
 │   │
 │   ├── Dockerfile
 │   ├── next.config.js
+│   ├── next-env.d.ts             # Next.js environment types
 │   ├── package.json
 │   └── tsconfig.json
 │
-├── .vscode/                       # VS Code configuration
-│   └── launch.json
-│
 ├── docker-compose.yml             # Docker orchestration
-├── README.md
+├── postgresql.conf                # PostgreSQL configuration
+├── Cargo.toml                     # Rust project config (for test script)
 │
-├── Test Scripts/                 # Testing utilities
-│   ├── test-hook.js              # Node.js test script
-│   ├── test-hook.ps1             # PowerShell test script
-│   ├── test-hook.rs              # Rust test script
-│   ├── JS_TEST_HOOK_README.md
-│   └── RUST_TEST_HOOK_README.md
+├── README.md                      # Main project documentation
+├── PROJECT_STRUCTURE.md           # This file
+├── JS_TEST_HOOK_README.md         # JavaScript test hook documentation
+├── RUST_TEST_HOOK_README.md       # Rust test hook documentation
 │
-└── Cargo.toml                     # Rust project config (for test script)
+├── test-hook.js                   # Node.js test script
+├── test-hook.ps1                  # PowerShell test script
+├── test-hook.rs                   # Rust test script
+├── reset-db.ps1                   # Database reset script
+├── run-all.ps1                    # Run all services script
+└── prompt                         # Prompt file
 ```
 
 ## Key Components
