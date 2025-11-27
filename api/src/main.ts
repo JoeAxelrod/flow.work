@@ -9,6 +9,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { RabbitMQService } from './engine/rabbitmq.service';
+import { KafkaService } from './engine/kafka.service';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap() {
@@ -40,5 +41,9 @@ async function bootstrap() {
   // Initialize RabbitMQ after server starts
   const rabbitMQ = app.get(RabbitMQService);
   await rabbitMQ.init();
+
+  // Initialize Kafka after server starts
+  const kafka = app.get(KafkaService);
+  await kafka.init();
 }
 bootstrap();

@@ -1,0 +1,39 @@
+warning: in the working copy of 'docker-compose.yml', CRLF will be replaced by LF the next time Git touches it
+[1mdiff --git a/docker-compose.yml b/docker-compose.yml[m
+[1mindex f52fa10..8b47d12 100644[m
+[1m--- a/docker-compose.yml[m
+[1m+++ b/docker-compose.yml[m
+[36m@@ -19,6 +19,25 @@[m [mservices:[m
+       RABBITMQ_DEFAULT_USER: guest[m
+       RABBITMQ_DEFAULT_PASS: guest[m
+ [m
+[32m+[m[32m  kafka:[m
+[32m+[m[32m    image: apache/kafka:4.1.0[m
+[32m+[m[32m    ports: ["9092:9092"][m
+[32m+[m[32m    environment:[m
+[32m+[m[32m      KAFKA_NODE_ID: 1[m
+[32m+[m[32m      KAFKA_PROCESS_ROLES: broker,controller[m
+[32m+[m[32m      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093[m
+[32m+[m[32m      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092[m
+[32m+[m[32m      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER[m
+[32m+[m[32m      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT[m
+[32m+[m[32m      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093[m
+[32m+[m[32m      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1[m
+[32m+[m[32m      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1[m
+[32m+[m[32m      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1[m
+[32m+[m[32m      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"[m
+[32m+[m[32m      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk[m
+[32m+[m[32m    volumes:[m
+[32m+[m[32m      - kafka-data:/var/lib/kafka/data[m
+[32m+[m
+   # api:[m
+   #   build: ./api[m
+   #   env_file: ./api/.env[m
+[36m@@ -49,6 +68,7 @@[m [mservices:[m
+ volumes:[m
+   db18:[m
+   pgadmin_data:[m
+[32m+[m[32m  kafka-data:[m
+ [m
+ [m
+ [m

@@ -1,6 +1,8 @@
-import { Inject, Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, Logger, forwardRef } from '@nestjs/common';
 import { Pool } from 'pg';
 import amqplib from 'amqplib';
+import { KafkaService } from './kafka.service';
+import { EngineService } from './engine.service';
 
 @Injectable()
 export class RabbitMQService implements OnModuleDestroy {
@@ -11,7 +13,11 @@ export class RabbitMQService implements OnModuleDestroy {
   private readonly DELAY_Q = 'timer.delay';
   private readonly FIRED_Q = 'timer.fired';
 
-  constructor(@Inject('PG') private readonly db: Pool) {}
+  constructor(
+    @Inject('PG') private readonly db: Pool,
+    @Inject(forwardRef(() => KafkaService)) private readonly kafka: KafkaService,
+    @Inject(forwardRef(() => EngineService)) private readonly engineService: EngineService
+  ) {}
 
   async init() {
     const rabbitUrl = process.env.RABBIT_URL || 'amqp://localhost';
@@ -66,17 +72,33 @@ export class RabbitMQService implements OnModuleDestroy {
   }
 
   private async onTimerFired(m: { instanceId:string; nodeId:string; workflowId:string; dueAt:number }) {
-    // resume from timer node's next edge
-    const { rows } = await this.db.query(`SELECT edges, workflow_id, id FROM _node WHERE id=$1`, [m.nodeId]);
-    const s = rows[0];
-    if (!s) return;
-    const nextKey = (s.edges || [])[0]?.to || null;
-    if (!nextKey) return;
-
-    const { rows: nx } = await this.db.query(
-      `SELECT id FROM _node WHERE workflow_id=$1 AND key=$2`, [s.workflow_id, nextKey]);
-    const nextId = nx[0]?.id;
-    // if (nextId) await this.chain(m.instanceId, nextId, m);
+    try {
+      // Get instance state for input
+      const { rows: activityRows } = await this.db.query(
+        `SELECT output FROM _activity WHERE instance_id=$1 ORDER BY created_at ASC`,
+        [m.instanceId]
+      );
+      const instanceState = activityRows.reduce((acc: any, r: any) => ({ ...acc, ...r.output }), {});
+      
+      // Use EngineService's findNextNode to properly handle conditional edges
+      const nextNodeId = await this.engineService.findNextNode(m.instanceId, m.nodeId, instanceState);
+      
+      if (nextNodeId) {
+        // Publish next activity to Kafka
+        await this.kafka.publishActivity(m.instanceId, nextNodeId, instanceState);
+        this.log.log(`Timer fired: Published next activity to Kafka: instanceId=${m.instanceId}, nextNodeId=${nextNodeId}`);
+      } else {
+        // No next node found - workflow is complete
+        await this.db.query(`
+          UPDATE _instance 
+          SET status='success', finished_at=now() 
+          WHERE id=$1 AND status='running'
+        `, [m.instanceId]);
+        this.log.log(`Timer fired but no next node found, marking instance as completed: instanceId=${m.instanceId}, nodeId=${m.nodeId}`);
+      }
+    } catch (error) {
+      this.log.error(`Failed to process timer event: ${String(error)}`, error instanceof Error ? error.stack : undefined);
+    }
   }
 }
 

@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { Pool } from 'pg';
 import { httpCall } from '../common/http';
 import { RabbitMQService } from './rabbitmq.service';
+import { KafkaService } from './kafka.service';
 
 type Edge = { from:string; to:string; type?: 'normal'|'if'|'loop'; condition?: string };
 
@@ -11,7 +12,8 @@ export class EngineService {
 
   constructor(
     @Inject('PG') private readonly db: Pool,
-    private readonly rabbitMQ: RabbitMQService
+    private readonly rabbitMQ: RabbitMQService,
+    @Inject(forwardRef(() => KafkaService)) private readonly kafka: KafkaService
   ) {}
 
   private evalCond(cond:string, ctx:any): boolean {
@@ -36,6 +38,52 @@ export class EngineService {
       }
     }
     return null;
+  }
+
+  /**
+   * Finds the next node to execute based on edges and conditions
+   * Returns the next node ID or null if no next node exists
+   */
+  async findNextNode(instanceId: string, nodeId: string, activityOutput: any = {}): Promise<string | null> {
+    // Get the current node with its edges
+    const { rows: nodeRows } = await this.db.query(`
+      SELECT n.*, w.id as workflow_id
+      FROM _node n JOIN _workflow w ON w.id=n.workflow_id 
+      WHERE n.id=$1`, [nodeId]);
+    
+    if (!nodeRows.length) {
+      this.log.warn(`Node not found: ${nodeId}`);
+      return null;
+    }
+    
+    const node = nodeRows[0];
+    
+    // Fetch edges for this node
+    const { rows: edgeRows } = await this.db.query(`
+      SELECT e.*, n2.id as target_node_id
+      FROM _edge e
+      JOIN _node n2 ON n2.id = e.target_id
+      WHERE e.source_id = $1`, [nodeId]);
+    
+    const edges = edgeRows.map((e: any) => ({
+      from: nodeId,
+      to: e.target_node_id,
+      type: e.kind === 'if' ? 'if' : 'normal',
+      condition: e.condition || undefined
+    }));
+    
+    const nodeWithEdges = { ...node, edges };
+    const instanceState = await this.instanceState(instanceId);
+    
+    // Use the existing nextFromEdges logic to determine next node
+    const nextNodeId = await this.nextFromEdges(nodeWithEdges, activityOutput, instanceState);
+    if (nextNodeId) {
+      this.log.log(`Found next node: ${nextNodeId} for instance: ${instanceId}`);
+    } else {
+      this.log.log(`No next node found for instance: ${instanceId}, node: ${nodeId}`);
+    }
+    
+    return nextNodeId;
   }
 
   private async instanceState(instanceId:string) {
@@ -74,7 +122,7 @@ export class EngineService {
     };
   }
 
-  async createAndRunActivity(instanceId: string, nodeId: string, input: any = {}): Promise<any> {
+  async executeActivity(instanceId: string, nodeId: string, input: any = {}): Promise<any> {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -104,24 +152,29 @@ export class EngineService {
       
       try {
         // Execute based on node kind
-        if (kind === 'http') {
-          output = await httpCall(node.data || {}, input, 15000);
-        } else if (kind === 'hook') {
-          output = { body: input };
-        } else if (kind === 'timer') {
-          const ms = Number(node.data?.ms ?? 1000);
-          const dueAt = Date.now() + ms;
-          await this.rabbitMQ.publishTimer(ms, { instanceId, nodeId, workflowId: node.workflow_id, dueAt });
-          output = { scheduledFor: dueAt };
-        } else if (kind === 'join') {
-          const state = await this.instanceState(instanceId);
-          const conds: string[] = (node.data?.conditions || []);
-          const ok = conds.every(c => this.evalCond(c, { worflow_activity_state: state }));
-          if (!ok) throw new Error('join conditions not met');
-          output = { join: 'ok' };
-        } else {
-          // noop
-          output = {};
+        switch (kind) {
+          case 'http':
+            output = await httpCall(node.data || {}, input, 15000);
+            break;
+          case 'hook':
+            output = { body: input };
+            break;
+          case 'timer':
+            const ms = Number(node.data?.ms ?? 1000);
+            const dueAt = Date.now() + ms;
+            await this.rabbitMQ.publishTimer(ms, { instanceId, nodeId, workflowId: node.workflow_id, dueAt });
+            output = { scheduledFor: dueAt };
+            break;
+          case 'join':
+            const state = await this.instanceState(instanceId);
+            const conds: string[] = (node.data?.conditions || []);
+            const ok = conds.every(c => this.evalCond(c, { worflow_activity_state: state }));
+            if (!ok) throw new Error('join conditions not met');
+            output = { join: 'ok' };
+            break;
+          default:
+            // noop
+            output = {};
         }
         
         // Update activity as success
@@ -132,6 +185,33 @@ export class EngineService {
         `, [JSON.stringify(output), activityId]);
         
         await client.query('COMMIT');
+        
+        // Find and publish next node to Kafka
+        // Skip for timer nodes - they will publish the next node when the timer fires
+        if (kind !== 'timer') {
+          try {
+            const nextNodeId = await this.findNextNode(instanceId, nodeId, output);
+            if (nextNodeId) {
+              const instanceState = await this.instanceState(instanceId);
+              const nextInput = { ...instanceState, ...output };
+              await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
+              this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
+            } else {
+              // No next node found - workflow-instance is complete
+              await this.db.query(`
+                UPDATE _instance 
+                SET status='success', finished_at=now() 
+                WHERE id=$1 AND status='running'
+              `, [instanceId]);
+              this.log.log(`No next node found, marking instance as completed: instanceId=${instanceId}`);
+            }
+          } catch (error) {
+            // Log error but don't fail the activity execution
+            this.log.error(`Failed to publish next node to Kafka: ${String(error)}`, error instanceof Error ? error.stack : undefined);
+          }
+        } else {
+          this.log.log(`Timer node executed, next node will be published when timer fires: instanceId=${instanceId}, nodeId=${nodeId}`);
+        }
         
         return {
           id: activityId,
@@ -155,7 +235,7 @@ export class EngineService {
   }
 
   async runNode(instanceId: string, nodeId: string, input: any = {}) {
-    await this.createAndRunActivity(instanceId, nodeId, input);
+    await this.executeActivity(instanceId, nodeId, input);
     // Continue to next node
     const { rows: nodeRows } = await this.db.query(`
       SELECT n.*, w.id as workflow_id
@@ -182,7 +262,7 @@ export class EngineService {
     const instanceState = await this.instanceState(instanceId);
     const nextNodeId = await this.nextFromEdges(nodeWithEdges, input, instanceState);
     if (nextNodeId) {
-      await this.createAndRunActivity(instanceId, nextNodeId, { ...instanceState, ...input });
+      await this.executeActivity(instanceId, nextNodeId, { ...instanceState, ...input });
     }
   }
 
@@ -195,7 +275,7 @@ export class EngineService {
       [workflowId]
     );
     if (rows.length) {
-      await this.createAndRunActivity(instance.id, rows[0].id, input);
+      await this.executeActivity(instance.id, rows[0].id, input);
     }
     return instance;
   }

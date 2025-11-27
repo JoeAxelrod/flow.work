@@ -22,6 +22,10 @@ import {
   useTheme,
   alpha,
   styled,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   AccountTree as WorkflowIcon,
@@ -33,6 +37,8 @@ import {
   CalendarToday as CalendarIcon,
   Circle as NodeIcon,
   Visibility as VisibilityIcon,
+  Code as CodeIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 
@@ -182,6 +188,7 @@ export default function InstancesPage() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState<{ nodeId: string; type: 'input' | 'output' } | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -205,26 +212,32 @@ export default function InstancesPage() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
+      case 'success':
       case 'completed':
         return 'success';
       case 'failed':
         return 'error';
       case 'running':
         return 'info';
+      case 'cancelled':
+        return 'warning';
       default:
         return 'default';
     }
   };
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
+      case 'success':
       case 'completed':
         return <CheckCircleIcon />;
       case 'failed':
         return <ErrorIcon />;
       case 'running':
         return <ScheduleIcon />;
+      case 'cancelled':
+        return <ErrorIcon />;
       default:
         return <PlayIcon />;
     }
@@ -250,6 +263,110 @@ export default function InstancesPage() {
   const getActivityStatusColorValue = (status: string) => {
     const color = getActivityStatusColor(status);
     return theme.palette[color]?.main || theme.palette.grey[500];
+  };
+
+  const getStatusColorValue = (status: string) => {
+    const color = getStatusColor(status);
+    if (color === 'default') {
+      return theme.palette.grey[500];
+    }
+    return theme.palette[color as 'success' | 'error' | 'info' | 'warning']?.main || theme.palette.grey[500];
+  };
+
+  const handleOpenDialog = (nodeId: string, type: 'input' | 'output') => {
+    setDialogOpen({ nodeId, type });
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(null);
+  };
+
+  const getDialogContent = () => {
+    if (!dialogOpen) return null;
+    
+    const instance = instances.find(i => i.nodes?.some(n => n.id === dialogOpen.nodeId));
+    const node = instance?.nodes?.find(n => n.id === dialogOpen.nodeId);
+    
+    if (!node) return null;
+    
+    const data = dialogOpen.type === 'input' ? node.input : node.output;
+    
+    return (
+      <Dialog
+        open={true}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CodeIcon />
+            <Typography variant="h6">
+              {dialogOpen.type === 'input' ? 'Input' : 'Output'} - {node.nodeName || 'Node'}
+            </Typography>
+          </Box>
+          <IconButton onClick={handleCloseDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Box
+            sx={{
+              p: 2,
+              bgcolor: 'background.paper',
+              borderRadius: 1,
+              border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
+              maxHeight: '60vh',
+              overflow: 'auto',
+            }}
+          >
+            <Typography
+              component="pre"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                m: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {JSON.stringify(data, null, 2)}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
+  const getTimerDuration = (node: Node): number | null => {
+    if (node.nodeKind === 'timer') {
+      // First check if ms is directly in output or input
+      if (node.output?.ms) return node.output.ms;
+      if (node.input?.ms) return node.input.ms;
+      
+      // Calculate from scheduledFor timestamp if available
+      if (node.output?.scheduledFor && node.startedAt) {
+        try {
+          const scheduledFor = typeof node.output.scheduledFor === 'number' 
+            ? node.output.scheduledFor 
+            : new Date(node.output.scheduledFor).getTime();
+          const startedAt = new Date(node.startedAt).getTime();
+          const duration = scheduledFor - startedAt;
+          return duration > 0 ? duration : null;
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return null;
   };
 
   return (
@@ -383,7 +500,7 @@ export default function InstancesPage() {
                         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flex: 1 }}>
                           <Avatar
                             sx={{
-                              bgcolor: theme.palette[getStatusColor(instance.status) as 'success' | 'error' | 'info'].main,
+                              bgcolor: getStatusColorValue(instance.status),
                               width: 56,
                               height: 56,
                             }}
@@ -430,14 +547,28 @@ export default function InstancesPage() {
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <CalendarIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                                 <Typography variant="body2" color="text.secondary">
-                                  Started: {new Date(instance.startedAt).toLocaleString()}
+                                  Started: {new Date(instance.startedAt).toLocaleString(undefined, { 
+                                    year: 'numeric', 
+                                    month: 'short', 
+                                    day: 'numeric', 
+                                    hour: '2-digit', 
+                                    minute: '2-digit', 
+                                    second: '2-digit' 
+                                  })}
                                 </Typography>
                               </Box>
                               {instance.finishedAt && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                   <CheckCircleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                                   <Typography variant="body2" color="text.secondary">
-                                    Finished: {new Date(instance.finishedAt).toLocaleString()}
+                                    Finished: {new Date(instance.finishedAt).toLocaleString(undefined, { 
+                                      year: 'numeric', 
+                                      month: 'short', 
+                                      day: 'numeric', 
+                                      hour: '2-digit', 
+                                      minute: '2-digit', 
+                                      second: '2-digit' 
+                                    })}
                                   </Typography>
                                 </Box>
                               )}
@@ -472,33 +603,37 @@ export default function InstancesPage() {
                                         bgcolor: alpha(theme.palette.primary.main, 0.02),
                                         border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
                                         position: 'relative',
+                                        transition: 'all 0.2s ease',
+                                        '&:hover': {
+                                          borderColor: alpha(theme.palette.primary.main, 0.3),
+                                        },
                                       }}
                                     >
-                                      <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                                      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                                         {/* Kind badge */}
                                         {node.nodeKind && (
                                           <Box
                                             sx={{
                                               position: 'absolute',
-                                              top: 2,
-                                              left: 2,
+                                              top: 4,
+                                              left: 4,
                                               background: '#4f46e5',
                                               color: 'white',
-                                              padding: '1px 2px 1px 1px',
-                                              borderRadius: '2px',
+                                              padding: '2px 4px 2px 2px',
+                                              borderRadius: '3px',
                                               fontSize: '8px',
                                               fontWeight: 'bold',
                                               textTransform: 'uppercase',
                                               display: 'flex',
                                               alignItems: 'center',
-                                              gap: '1px',
+                                              gap: '2px',
                                             }}
                                           >
                                             <Box
                                               sx={{
                                                 background: '#3730a3',
                                                 borderRadius: '2px',
-                                                padding: '0.5px',
+                                                padding: '1px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
@@ -507,23 +642,27 @@ export default function InstancesPage() {
                                               {getKindIcon(node.nodeKind)}
                                             </Box>
                                             <span>{node.nodeKind}</span>
+                                            {node.nodeKind === 'timer' && (() => {
+                                              const duration = getTimerDuration(node);
+                                              return duration !== null ? ` (${duration} ms)` : '';
+                                            })()}
                                           </Box>
                                         )}
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, mt: node.nodeKind ? 1.5 : 0 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, mt: node.nodeKind ? 2 : 0 }}>
                                           <Avatar
                                             sx={{
                                               bgcolor: getActivityStatusColorValue(node.status),
-                                              width: 24,
-                                              height: 24,
+                                              width: 28,
+                                              height: 28,
                                             }}
                                           >
-                                            <NodeIcon sx={{ fontSize: 14 }} />
+                                            <NodeIcon sx={{ fontSize: 16 }} />
                                           </Avatar>
-                                          <Box sx={{ flex: 1 }}>
-                                            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block' }}>
+                                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.8rem', display: 'block' }}>
                                               {node.nodeName || `Node ${nodeIndex + 1}`}
                                             </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                                               {node.nodeId.substring(0, 8)}...
                                             </Typography>
                                           </Box>
@@ -533,107 +672,93 @@ export default function InstancesPage() {
                                             size="small"
                                             sx={{ 
                                               textTransform: 'capitalize',
-                                              height: '20px',
-                                              fontSize: '0.65rem',
-                                              '& .MuiChip-label': { px: 0.5 }
+                                              height: '22px',
+                                              fontSize: '0.7rem',
+                                              '& .MuiChip-label': { px: 0.75 }
                                             }}
                                           />
                                         </Box>
 
-                                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75}>
-                                          {node.input && (
-                                            <Box sx={{ flex: 1 }}>
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mb: 0.25, display: 'block', fontSize: '0.65rem' }}>
-                                                Input:
-                                              </Typography>
-                                              <Box
+                                        {(node.input || node.output) && (
+                                          <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+                                            {node.input && (
+                                              <Button
+                                                size="small"
+                                                variant="outlined"
+                                                startIcon={<CodeIcon />}
+                                                onClick={() => handleOpenDialog(node.id, 'input')}
                                                 sx={{
-                                                  p: 0.5,
-                                                  bgcolor: 'background.paper',
-                                                  borderRadius: 0.5,
-                                                  border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
-                                                  maxHeight: 150,
-                                                  overflow: 'auto',
+                                                  textTransform: 'none',
+                                                  fontSize: '0.7rem',
+                                                  py: 0.5,
+                                                  px: 1.5,
                                                 }}
                                               >
-                                                <Typography
-                                                  variant="body2"
-                                                  component="pre"
-                                                  sx={{
-                                                    fontFamily: 'monospace',
-                                                    fontSize: '0.65rem',
-                                                    m: 0,
-                                                    whiteSpace: 'pre-wrap',
-                                                    wordBreak: 'break-word',
-                                                  }}
-                                                >
-                                                  {JSON.stringify(node.input, null, 2)}
-                                                </Typography>
-                                              </Box>
-                                            </Box>
-                                          )}
-                                          {node.output && (
-                                            <Box sx={{ flex: 1 }}>
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mb: 0.25, display: 'block', fontSize: '0.65rem' }}>
-                                                Output:
-                                              </Typography>
-                                              <Box
+                                                Input
+                                              </Button>
+                                            )}
+                                            {node.output && (
+                                              <Button
+                                                size="small"
+                                                variant="outlined"
+                                                startIcon={<CodeIcon />}
+                                                onClick={() => handleOpenDialog(node.id, 'output')}
                                                 sx={{
-                                                  p: 0.5,
-                                                  bgcolor: 'background.paper',
-                                                  borderRadius: 0.5,
-                                                  border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
-                                                  maxHeight: 150,
-                                                  overflow: 'auto',
+                                                  textTransform: 'none',
+                                                  fontSize: '0.7rem',
+                                                  py: 0.5,
+                                                  px: 1.5,
                                                 }}
                                               >
-                                                <Typography
-                                                  variant="body2"
-                                                  component="pre"
-                                                  sx={{
-                                                    fontFamily: 'monospace',
-                                                    fontSize: '0.65rem',
-                                                    m: 0,
-                                                    whiteSpace: 'pre-wrap',
-                                                    wordBreak: 'break-word',
-                                                  }}
-                                                >
-                                                  {JSON.stringify(node.output, null, 2)}
-                                                </Typography>
-                                              </Box>
-                                            </Box>
-                                          )}
-                                        </Stack>
+                                                Output
+                                              </Button>
+                                            )}
+                                          </Box>
+                                        )}
 
                                         {node.error && (
                                           <Box
                                             sx={{
-                                              mt: 0.75,
-                                              p: 0.5,
+                                              mt: 1,
+                                              p: 1,
                                               bgcolor: alpha(theme.palette.error.main, 0.1),
-                                              borderRadius: 0.5,
+                                              borderRadius: 1,
                                               border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
                                             }}
                                           >
-                                            <Typography variant="caption" color="error" sx={{ fontWeight: 600, display: 'block', mb: 0.25, fontSize: '0.65rem' }}>
+                                            <Typography variant="caption" color="error" sx={{ fontWeight: 600, display: 'block', mb: 0.25, fontSize: '0.7rem' }}>
                                               Error:
                                             </Typography>
-                                            <Typography variant="caption" color="error" sx={{ fontSize: '0.65rem' }}>
+                                            <Typography variant="caption" color="error" sx={{ fontSize: '0.7rem' }}>
                                               {node.error}
                                             </Typography>
                                           </Box>
                                         )}
 
                                         {(node.startedAt || node.finishedAt) && (
-                                          <Box sx={{ mt: 0.5, display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                                          <Box sx={{ mt: 1, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
                                             {node.startedAt && (
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                                Started: {new Date(node.startedAt).toLocaleString()}
+                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                                Started: {new Date(node.startedAt).toLocaleString(undefined, { 
+                                                  year: 'numeric', 
+                                                  month: 'short', 
+                                                  day: 'numeric', 
+                                                  hour: '2-digit', 
+                                                  minute: '2-digit', 
+                                                  second: '2-digit' 
+                                                })}
                                               </Typography>
                                             )}
                                             {node.finishedAt && (
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                                Finished: {new Date(node.finishedAt).toLocaleString()}
+                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                                Finished: {new Date(node.finishedAt).toLocaleString(undefined, { 
+                                                  year: 'numeric', 
+                                                  month: 'short', 
+                                                  day: 'numeric', 
+                                                  hour: '2-digit', 
+                                                  minute: '2-digit', 
+                                                  second: '2-digit' 
+                                                })}
                                               </Typography>
                                             )}
                                           </Box>
@@ -655,6 +780,7 @@ export default function InstancesPage() {
           </Box>
         )}
       </Container>
+      {getDialogContent()}
     </Box>
   );
 }

@@ -2,12 +2,14 @@ import { Body, Controller, Get, Inject, Param, Post, NotFoundException } from '@
 import { Pool } from 'pg';
 import { WorkflowsService } from './workflows.service';
 import { EngineService } from '../engine/engine.service';
+import { KafkaService } from '../engine/kafka.service';
 
 @Controller('api/v1/workflows')
 export class WorkflowsController {
   constructor(@Inject('PG') private readonly db: Pool,
               private readonly svc: WorkflowsService,
-              private readonly eng: EngineService) {}
+              private readonly eng: EngineService,
+              private readonly kafka: KafkaService) {}
 
   // List all workflows
   @Get()
@@ -49,16 +51,15 @@ export class WorkflowsController {
   @Post(':id')
   async start(@Param('id') id:string, @Body() body:any) {
     // Get first node (node with no incoming edges)
-    console.log("111111111111111111111111111111111111111111111111111")
     const nodeId = await this.svc.firstNodeId(id);
     if (!nodeId) throw new Error('start node not found');
     
     // Create instance record in database
     const instance = await this.eng.createInstance(id, body || {});
     
-    // Create activity and run it
-    const activity = await this.eng.createAndRunActivity(instance.id, nodeId, body || {});
+    // Publish activity to Kafka queue
+    await this.kafka.publishActivity(instance.id, nodeId, body || {});
     
-    return { instanceId: instance.id, activityId: activity.id };
+    return { instanceId: instance.id, message: 'Activity queued for execution' };
   }
 }
