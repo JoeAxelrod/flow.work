@@ -387,4 +387,54 @@ export class WorkflowsService {
     
     return instancesWithNodes;
   }
+
+  async getInstance(instanceId: string) {
+    const { rows } = await this.db.query(
+      `SELECT id, workflow_id, status, input, output, error, started_at, finished_at
+       FROM public._instance
+       WHERE id = $1`,
+      [instanceId]
+    );
+    
+    if (rows.length === 0) {
+      return null;
+    }
+    
+    const row = rows[0];
+    
+    // Fetch activities (nodes) for this instance
+    const { rows: activityRows } = await this.db.query(
+      `SELECT a.*, s.label as node_name, s.kind as node_kind
+       FROM public._activity a
+       JOIN public._node s ON s.id = a.node_id
+       WHERE a.instance_id = $1
+       ORDER BY a.created_at ASC`,
+      [instanceId]
+    );
+    
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      status: row.status,
+      input: row.input,
+      output: row.output,
+      error: row.error,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      nodes: activityRows.map((activity: any) => ({
+        id: activity.id,
+        nodeId: activity.node_id,
+        nodeName: activity.node_name,
+        nodeKind: activity.node_kind,
+        status: activity.status,
+        input: activity.input,
+        output: activity.output,
+        error: activity.error,
+        startedAt: activity.started_at,
+        finishedAt: activity.finished_at,
+        createdAt: activity.created_at,
+        updatedAt: activity.updated_at,
+      })),
+    };
+  }
 }

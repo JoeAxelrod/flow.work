@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';
 import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 import { useToast } from '../../../components/ToastContext';
@@ -19,7 +19,7 @@ import ReactFlow, {
 } from 'reactflow';
 
 import 'reactflow/dist/style.css';
-import { getWorkflow, importWorkflow } from '../../../api-client';
+import { getWorkflow, importWorkflow, getInstance } from '../../../api-client';
 import { NodeConfig, EdgeConfig, WorkflowData } from './types';
 import {
   nodesToFlowNodes,
@@ -44,11 +44,15 @@ const edgeTypes = {};
 
 export default function WorkflowEditorPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const workflowId = params.id as string;
+  const instanceId = searchParams.get('instanceId');
+  const isInstanceMode = !!instanceId;
   const toast = useToast();
 
   // State
   const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
+  const [instanceData, setInstanceData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
@@ -90,6 +94,9 @@ export default function WorkflowEditorPage() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const MAX_HISTORY = 50;
+  
+  // Metadata panel state
+  const [selectedNodeForMetadata, setSelectedNodeForMetadata] = useState<string | null>(null);
 
   
 
@@ -116,9 +123,76 @@ export default function WorkflowEditorPage() {
     }
   }, [workflowId, setNodes, setEdges]);
 
+  // Fetch instance data if in instance mode
+  const fetchInstance = useCallback(async () => {
+    if (!isInstanceMode || !instanceId) return;
+    
+    try {
+      const instance = await getInstance(instanceId);
+      setInstanceData(instance);
+      console.log('Instance data:', instance);
+    } catch (err: any) {
+      console.error('Error fetching instance:', err);
+      toast.showToast(`Failed to load instance: ${err.message}`, 'error');
+    }
+  }, [isInstanceMode, instanceId, toast]);
+
   useEffect(() => {
     fetchWorkflow();
   }, [fetchWorkflow]);
+
+  useEffect(() => {
+    fetchInstance();
+  }, [fetchInstance]);
+
+  // Enrich nodes with instance data when instance data is loaded
+  useEffect(() => {
+    if (isInstanceMode && instanceData && nodes.length > 0) {
+      const enrichedNodes = nodes.map((node) => {
+        const instanceNode = instanceData.nodes?.find((n: any) => n.nodeId === node.id);
+        if (instanceNode) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              instanceData: {
+                status: instanceNode.status,
+                input: instanceNode.input,
+                output: instanceNode.output,
+                error: instanceNode.error,
+                startedAt: instanceNode.startedAt,
+                finishedAt: instanceNode.finishedAt,
+              },
+            },
+          };
+        }
+        return node;
+      });
+      setNodes(enrichedNodes);
+    }
+  }, [instanceData, isInstanceMode, setNodes]);
+
+  // Handle node click for metadata
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    if (isInstanceMode && node.data?.instanceData) {
+      setSelectedNodeForMetadata(selectedNodeForMetadata === node.id ? null : node.id);
+    }
+  }, [isInstanceMode, selectedNodeForMetadata]);
+
+  // Listen for metadata toggle events from nodes
+  useEffect(() => {
+    const handleToggleMetadata = (event: CustomEvent) => {
+      const nodeId = event.detail?.nodeId;
+      if (nodeId) {
+        setSelectedNodeForMetadata(selectedNodeForMetadata === nodeId ? null : nodeId);
+      }
+    };
+
+    window.addEventListener('toggleMetadata', handleToggleMetadata as EventListener);
+    return () => {
+      window.removeEventListener('toggleMetadata', handleToggleMetadata as EventListener);
+    };
+  }, [selectedNodeForMetadata]);
 
     // Update undo/redo button states
     const updateUndoRedoState = useCallback(() => {
@@ -613,6 +687,11 @@ export default function WorkflowEditorPage() {
         >
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
             {workflowData?.workflow?.name || 'Workflow'}
+            {isInstanceMode && (
+              <span style={{ marginLeft: '12px', fontSize: '0.875rem', color: '#6b7280', fontWeight: 'normal' }}>
+                (Instance View - Read Only)
+              </span>
+            )}
           </h2>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
             {isSaving && (
@@ -653,21 +732,120 @@ export default function WorkflowEditorPage() {
             >
               Redo
             </button>
-            <button
-              onClick={() => setShowAddNodeModal(true)}
-              style={{
-                padding: '8px 16px',
-                background: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              Add Node
-            </button>
+            {!isInstanceMode && (
+              <button
+                onClick={() => setShowAddNodeModal(true)}
+                style={{
+                  padding: '8px 16px',
+                  background: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Add Node
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Floating Metadata Panel */}
+        {isInstanceMode && selectedNodeForMetadata && (() => {
+          const selectedNode = nodes.find(n => n.id === selectedNodeForMetadata);
+          const metadata = selectedNode?.data?.instanceData;
+          if (!metadata) return null;
+          
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                left: '20px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '400px',
+                maxHeight: '80vh',
+                background: 'white',
+                border: '2px solid #4f46e5',
+                borderRadius: '8px',
+                padding: '16px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                zIndex: 1000,
+                overflow: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
+                  {selectedNode?.data?.label || 'Node Metadata'}
+                </h3>
+                <button
+                  onClick={() => setSelectedNodeForMetadata(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    padding: '0',
+                    width: '24px',
+                    height: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', marginBottom: '12px' }}>
+                <strong>Status:</strong>{' '}
+                <span style={{ 
+                  color: metadata.status === 'success' ? '#10b981' : 
+                         metadata.status === 'failed' ? '#ef4444' : '#6b7280' 
+                }}>
+                  {metadata.status}
+                </span>
+              </div>
+              {metadata.input && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Input:</div>
+                  <pre style={{ 
+                    background: '#f3f4f6', 
+                    padding: '8px', 
+                    borderRadius: '4px', 
+                    fontSize: '11px', 
+                    overflow: 'auto', 
+                    maxHeight: '200px',
+                    margin: 0,
+                  }}>
+                    {JSON.stringify(metadata.input, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {metadata.output && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Output:</div>
+                  <pre style={{ 
+                    background: '#f3f4f6', 
+                    padding: '8px', 
+                    borderRadius: '4px', 
+                    fontSize: '11px', 
+                    overflow: 'auto', 
+                    maxHeight: '200px',
+                    margin: 0,
+                  }}>
+                    {JSON.stringify(metadata.output, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {metadata.error && (
+                <div style={{ marginTop: '12px', color: '#ef4444' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Error:</div>
+                  <div style={{ fontSize: '12px' }}>{metadata.error}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ReactFlow Canvas */}
         <div style={{ flex: 1 }}>
@@ -676,21 +854,26 @@ export default function WorkflowEditorPage() {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onConnectStart={onConnectStart}
-            onConnectEnd={onConnectEnd}
+            onConnect={isInstanceMode ? undefined : onConnect}
+            onConnectStart={isInstanceMode ? undefined : onConnectStart}
+            onConnectEnd={isInstanceMode ? undefined : onConnectEnd}
+            onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onEdgeDoubleClick={onEdgeDoubleClick}
             onEdgeMouseEnter={onEdgeMouseEnter}
             onEdgeMouseMove={onEdgeMouseMove}
             onEdgeMouseLeave={onEdgeMouseLeave}
             onEdgeContextMenu={onEdgeContextMenu}
-            onEdgeUpdate={onEdgeUpdate}
-            onEdgeUpdateStart={onEdgeUpdateStart}
-            onEdgeUpdateEnd={onEdgeUpdateEnd}
+            onEdgeUpdate={isInstanceMode ? undefined : onEdgeUpdate}
+            onEdgeUpdateStart={isInstanceMode ? undefined : onEdgeUpdateStart}
+            onEdgeUpdateEnd={isInstanceMode ? undefined : onEdgeUpdateEnd}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            connectionMode={ConnectionMode.Loose} 
+            connectionMode={ConnectionMode.Loose}
+            nodesConnectable={!isInstanceMode}
+            elementsSelectable={!isInstanceMode}
+            nodesDraggable={!isInstanceMode}
+            edgesUpdatable={!isInstanceMode}
             fitView
           >
             <Background />

@@ -46,6 +46,15 @@ export type FlowNode = Node<{
   label: string;
   kind: NodeKind;
   data: Record<string, any>;
+  isInstanceMode?: boolean;
+  instanceData?: {
+    status: string;
+    input: any;
+    output: any;
+    error: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  };
 }>;
 
 export type FlowEdge = Edge<{

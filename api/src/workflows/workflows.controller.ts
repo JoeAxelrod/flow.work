@@ -39,6 +39,12 @@ export class WorkflowsController {
     return this.svc.getInstances(id);
   }
 
+  // get a single instance by instance ID
+  @Get('instances/:instanceId')
+  async getInstance(@Param('instanceId') instanceId: string) {
+    return this.svc.getInstance(instanceId);
+  }
+
   // start by API: POST /api/v1/workflows/:id  body provides url+data for S1
   @Post(':id')
   async start(@Param('id') id:string, @Body() body:any) {

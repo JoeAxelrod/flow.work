@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
 import { FlowNode, NodeKind } from './types';
 
@@ -95,17 +95,40 @@ function getKindIcon(kind: NodeKind) {
 
 export function StationNode({ data, id }: StationNodeProps) {
   const isHook = data.kind === 'hook';
+  const isInstanceMode = data.isInstanceMode || false;
+  const instanceData = data.instanceData;
   const { getEdges } = useReactFlow();
 
   useEffect(() => {
     console.log('[StationNode] mounted, edges:', getEdges());
   }, [getEdges]);
 
+  // Get border color based on instance status
+  const getBorderColor = () => {
+    if (!instanceData) return '#9ca3af'; // gray for no activity
+    const status = instanceData.status?.toLowerCase();
+    if (status === 'success' || status === 'completed') return '#10b981'; // green for success
+    if (status === 'failed' || status === 'error') return '#ef4444'; // red for failed/error
+    return '#9ca3af'; // gray for other statuses (no activity)
+  };
+
+  const handleMetadataToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const event = new CustomEvent('toggleMetadata', { detail: { nodeId: id } });
+    window.dispatchEvent(event);
+  };
+
+  // In instance mode, always use activity-based colors (gray/green/red), never purple
+  // Outside instance mode, use purple for nodes without activity, gray/green/red for nodes with activity
+  const borderColor = isInstanceMode 
+    ? getBorderColor() // In instance mode: always gray/green/red based on activity
+    : (instanceData ? getBorderColor() : '#4f46e5'); // Outside instance mode: purple if no activity, otherwise activity-based
+
   return (
     <div
       style={{
         background: 'white',
-        border: '2px solid #4f46e5',
+        border: `2px solid ${borderColor}`,
         borderRadius: '8px',
         padding: '12px',
         minWidth: '150px',
@@ -114,7 +137,7 @@ export function StationNode({ data, id }: StationNodeProps) {
       }}
     >
       {/* 2 handles: left + right. Each can be start OR end (with ConnectionMode.Loose). */}
-      {!isHook && (
+      {!isHook && !isInstanceMode && (
         <>
           <Handle
             id="left"
@@ -178,17 +201,17 @@ export function StationNode({ data, id }: StationNodeProps) {
       >
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
-            {data.label} 
-            {/* {id.slice(-3)} */}
+            {data.label}
           </div>
+          {instanceData && (
+            <div style={{ fontSize: '10px', color: instanceData.status === 'success' ? '#10b981' : instanceData.status === 'failed' ? '#ef4444' : '#6b7280', marginTop: '4px' }}>
+              Status: {instanceData.status}
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+        {instanceData && (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const event = new CustomEvent('editNode', { detail: { nodeId: id } });
-              window.dispatchEvent(event);
-            }}
+            onClick={handleMetadataToggle}
             style={{
               background: '#4f46e5',
               border: 'none',
@@ -200,8 +223,9 @@ export function StationNode({ data, id }: StationNodeProps) {
               alignItems: 'center',
               justifyContent: 'center',
               padding: 0,
+              marginLeft: '8px',
             }}
-            title="Edit node"
+            title="View metadata"
           >
             <svg
               width="14"
@@ -213,49 +237,88 @@ export function StationNode({ data, id }: StationNodeProps) {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Are you sure you want to delete this node?')) {
-                const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
+        )}
+        {!isInstanceMode && (
+          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const event = new CustomEvent('editNode', { detail: { nodeId: id } });
                 window.dispatchEvent(event);
-              }
-            }}
-            style={{
-              background: '#ef4444',
-              border: 'none',
-              borderRadius: '4px',
-              width: '24px',
-              height: '24px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-            }}
-            title="Delete node"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              }}
+              style={{
+                background: '#4f46e5',
+                border: 'none',
+                borderRadius: '4px',
+                width: '24px',
+                height: '24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+              title="Edit node"
             >
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 0-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              <line x1="10" y1="11" x2="10" y2="17" />
-              <line x1="14" y1="11" x2="14" y2="17" />
-            </svg>
-          </button>
-        </div>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete this node?')) {
+                  const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
+                  window.dispatchEvent(event);
+                }
+              }}
+              style={{
+                background: '#ef4444',
+                border: 'none',
+                borderRadius: '4px',
+                width: '24px',
+                height: '24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+              title="Delete node"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 0-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

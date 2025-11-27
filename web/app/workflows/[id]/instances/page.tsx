@@ -32,6 +32,7 @@ import {
   Schedule as ScheduleIcon,
   CalendarToday as CalendarIcon,
   Circle as NodeIcon,
+  Visibility as VisibilityIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 
@@ -408,6 +409,22 @@ export default function InstancesPage() {
                                 size="small"
                                 sx={{ textTransform: 'capitalize' }}
                               />
+                              <Button
+                                component={Link}
+                                href={`/workflows/${workflowId}/editor?instanceId=${instance.id}`}
+                                size="small"
+                                variant="outlined"
+                                startIcon={<VisibilityIcon />}
+                                sx={{
+                                  ml: 'auto',
+                                  textTransform: 'none',
+                                  fontSize: '0.75rem',
+                                  minWidth: 'auto',
+                                  px: 1,
+                                }}
+                              >
+                                View in Editor
+                              </Button>
                             </Box>
                             <Stack direction="row" spacing={2} sx={{ mt: 1, flexWrap: 'wrap', gap: 1 }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

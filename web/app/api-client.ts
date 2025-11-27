@@ -59,3 +59,9 @@ export async function getInstanceActivities(instanceId:string){
   return r.json();
 }
 
+export async function getInstance(instanceId:string){
+  const r = await fetch(`${API}/workflows/instances/${instanceId}`);
+  if (!r.ok) throw new Error(`Failed to fetch instance: ${r.statusText}`);
+  return r.json();
+}
+

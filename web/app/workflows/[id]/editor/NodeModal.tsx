@@ -159,7 +159,7 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel }: 
               borderRadius: '4px',
               cursor: 'pointer',
             }}
-          >
+            >
             Cancel
           </button>
           <button
