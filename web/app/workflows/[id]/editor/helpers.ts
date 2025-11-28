@@ -161,6 +161,7 @@ export function prepareNodeData(kind: string, configData: Record<string, any>): 
     case 'timer':
       return { ms: configData.ms || 30000 };
     case 'hook':
+    case 'join':
     default:
       return {};
   }

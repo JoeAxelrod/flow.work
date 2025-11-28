@@ -5,7 +5,7 @@ import { RabbitMQService } from './rabbitmq.service';
 import { KafkaService } from './kafka.service';
 import { EventsGateway } from '../events/events.gateway';
 
-type Edge = { from:string; to:string; type?: 'normal'|'if'; condition?: string };
+type Edge = { from: string; to: string; type?: 'normal' | 'if'; condition?: string };
 
 @Injectable()
 export class EngineService {
@@ -16,16 +16,16 @@ export class EngineService {
     private readonly rabbitMQ: RabbitMQService,
     @Inject(forwardRef(() => KafkaService)) private readonly kafka: KafkaService,
     @Optional() private readonly eventsGateway?: EventsGateway
-  ) {}
+  ) { }
 
-  private evalCond(cond:string, ctx:any): boolean {
+  private evalCond(cond: string, ctx: any): boolean {
     if (!cond || !cond.trim()) return false;
-    
+
     // Support multiple operators: =, <, >, <=, >=, !=, <>
     const operators = ['<=', '>=', '!=', '<>', '<', '>', '='];
     let operator: string | null = null;
     let operatorIndex = -1;
-    
+
     for (const op of operators) {
       const index = cond.indexOf(op);
       if (index !== -1) {
@@ -34,15 +34,15 @@ export class EngineService {
         break;
       }
     }
-    
+
     if (!operator || operatorIndex === -1) return false;
-    
+
     const leftPath = cond.substring(0, operatorIndex).trim();
     const rightRaw = cond.substring(operatorIndex + operator.length).trim();
-    
+
     // Resolve the left side value from context (supports input.something format)
-    const val = leftPath.split('.').reduce((a:any, k) => (a == null ? a : a[k]), ctx);
-    
+    const val = leftPath.split('.').reduce((a: any, k) => (a == null ? a : a[k]), ctx);
+
     // Parse the right side value
     let right: any = rightRaw;
     if (/^\d+(\.\d+)?$/.test(rightRaw)) {
@@ -52,7 +52,7 @@ export class EngineService {
     } else if (/^'(.*)'$/.test(rightRaw)) {
       right = rightRaw.slice(1, -1);
     }
-    
+
     // Compare based on operator
     switch (operator) {
       case '=':
@@ -73,7 +73,7 @@ export class EngineService {
     }
   }
 
-  private async nextFromEdges(nodeRow:any, payload:any, instanceState:any): Promise<string[]> {
+  private async nextFromEdges(nodeRow: any, payload: any, instanceState: any): Promise<string[]> {
     const edges: Edge[] = nodeRow.edges || [];
     const nextNodes: string[] = [];
     // Merge instance state and current payload to create context with 'input' key
@@ -98,17 +98,17 @@ export class EngineService {
     const { rows: incomingEdges } = await this.db.query(`
       SELECT source_id FROM _edge WHERE target_id = $1
     `, [targetNodeId]);
-    
+
     const incomingEdgeCount = incomingEdges.length;
-    
+
     // If 0 or 1 incoming edge, we can proceed immediately
     if (incomingEdgeCount <= 1) {
       return true;
     }
-    
+
     // If more than 1 incoming edge, check if all source nodes have completed activities
     const sourceNodeIds = incomingEdges.map((e: any) => e.source_id);
-    
+
     // Count how many distinct source nodes have completed activities for this instance
     const { rows: completedCountRows } = await this.db.query(`
       SELECT COUNT(DISTINCT node_id) as completed_count
@@ -117,19 +117,19 @@ export class EngineService {
         AND node_id = ANY($2::uuid[])
         AND status = 'success'
     `, [instanceId, sourceNodeIds]);
-    
+
     const completedCount = parseInt(completedCountRows[0]?.completed_count || '0', 10);
-    
+
     // Only proceed if all source nodes have completed
     const canProceed = completedCount >= incomingEdgeCount;
-    
+
     if (!canProceed) {
       this.log.log(
         `Waiting for all prerequisites: targetNodeId=${targetNodeId}, ` +
         `incomingEdges=${incomingEdgeCount}, completed=${completedCount}`
       );
     }
-    
+
     return canProceed;
   }
 
@@ -144,30 +144,30 @@ export class EngineService {
       WHERE e.source_id = $1 AND e.target_id = $2
       LIMIT 1
     `, [sourceNodeId, targetNodeId]);
-    
+
     if (edgeRows.length === 0) {
       // No edge found, treat as normal edge (always proceed)
       return true;
     }
-    
+
     const edge = edgeRows[0];
-    
+
     // If edge is not conditional, always proceed
     if (edge.kind !== 'if' || !edge.condition) {
       return true;
     }
-    
+
     // Evaluate the condition
     // The context should have 'input' key with the workflow state
     const conditionMet = this.evalCond(edge.condition, context);
-    
+
     if (!conditionMet) {
       this.log.log(
         `Edge condition not met: sourceNodeId=${sourceNodeId}, targetNodeId=${targetNodeId}, ` +
         `condition="${edge.condition}"`
       );
     }
-    
+
     return conditionMet;
   }
 
@@ -181,31 +181,31 @@ export class EngineService {
       SELECT n.*, w.id as workflow_id
       FROM _node n JOIN _workflow w ON w.id=n.workflow_id 
       WHERE n.id=$1`, [nodeId]);
-    
+
     if (!nodeRows.length) {
       this.log.warn(`Node not found: ${nodeId}`);
       return [];
     }
-    
+
     const node = nodeRows[0];
-    
+
     // Fetch edges for this node
     const { rows: edgeRows } = await this.db.query(`
       SELECT e.*, n2.id as target_node_id
       FROM _edge e
       JOIN _node n2 ON n2.id = e.target_id
       WHERE e.source_id = $1`, [nodeId]);
-    
+
     const edges = edgeRows.map((e: any) => ({
       from: nodeId,
       to: e.target_node_id,
       type: e.kind === 'if' ? 'if' : 'normal',
       condition: e.condition || undefined
     }));
-    
+
     const nodeWithEdges = { ...node, edges };
     const instanceState = await this.instanceState(instanceId);
-    
+
     // Use the existing nextFromEdges logic to determine next nodes
     const nextNodeIds = await this.nextFromEdges(nodeWithEdges, activityOutput, instanceState);
     if (nextNodeIds.length > 0) {
@@ -213,14 +213,14 @@ export class EngineService {
     } else {
       this.log.log(`No next node found for instance: ${instanceId}, node: ${nodeId}`);
     }
-    
+
     return nextNodeIds;
   }
 
-  private async instanceState(instanceId:string) {
+  private async instanceState(instanceId: string) {
     const { rows } = await this.db.query(
-      `SELECT output FROM _activity WHERE instance_id=$1 ORDER BY created_at ASC`,[instanceId]);
-    return rows.reduce((acc:any,r:any)=> ({...acc, ...r.output}), {});
+      `SELECT output FROM _activity WHERE instance_id=$1 ORDER BY created_at ASC`, [instanceId]);
+    return rows.reduce((acc: any, r: any) => ({ ...acc, ...r.output }), {});
   }
 
   /**
@@ -263,7 +263,7 @@ export class EngineService {
       `SELECT id FROM _workflow WHERE id=$1`,
       [workflowId]
     );
-    
+
     if (workflowRows.length === 0) {
       throw new Error('Workflow not found');
     }
@@ -290,32 +290,32 @@ export class EngineService {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Get node and workflow info
       const { rows: nodeRows } = await client.query(`
         SELECT n.*, w.id as workflow_id
         FROM _node n JOIN _workflow w ON w.id=n.workflow_id 
         WHERE n.id=$1`, [nodeId]);
-      
+
       if (!nodeRows.length) {
         throw new Error('Node not found');
       }
-      
+
       const node = nodeRows[0];
       const kind = node.kind;
       const nodeLabel = node.label || 'Unknown';
       const nodeKind = node.kind || 'http';
-      
+
       // Create activity
       const { rows: activityRows } = await client.query(`
         INSERT INTO _activity(instance_id, workflow_id, node_id, status, input, started_at)
         VALUES ($1, $2, $3, 'running', $4, now())
         RETURNING id, status, input, output, started_at
       `, [instanceId, node.workflow_id, nodeId, JSON.stringify(input || {})]);
-      
+
       const activityId = activityRows[0].id;
       const startedAt = activityRows[0].started_at;
-      
+
       // Emit activity started event
       this.emitActivityUpdateEvent(
         instanceId,
@@ -330,9 +330,9 @@ export class EngineService {
         startedAt,
         null
       );
-      
+
       let output: any = {};
-      
+
       try {
         // Execute based on node kind
         switch (kind) {
@@ -348,10 +348,15 @@ export class EngineService {
             await this.rabbitMQ.publishTimer(ms, { instanceId, nodeId, workflowId: node.workflow_id, dueAt });
             output = { scheduledFor: dueAt };
             break;
+          case 'join':
+            // Join node: pass through input, waits for all incoming edges to complete
+            // The canProceedToNode check ensures all prerequisites are met before execution
+            output = input;
+            break;
           default:
             output = {};
         }
-        
+
         // Update activity as success
         const { rows: finishedRows } = await client.query(`
           UPDATE _activity 
@@ -359,11 +364,11 @@ export class EngineService {
           WHERE id=$2
           RETURNING finished_at
         `, [JSON.stringify(output), activityId]);
-        
+
         const finishedAt = finishedRows[0]?.finished_at;
-        
+
         await client.query('COMMIT');
-        
+
         // Emit activity completed event
         this.emitActivityUpdateEvent(
           instanceId,
@@ -378,9 +383,10 @@ export class EngineService {
           startedAt,
           finishedAt
         );
-        
+
         // Find and publish next nodes to Kafka
         // Skip for timer nodes - they will publish the next node when the timer fires
+        // Join nodes proceed normally after all incoming edges are satisfied
         if (kind !== 'timer') {
           try {
             const nextNodeIds = await this.findNextNodes(instanceId, nodeId, output);
@@ -392,16 +398,19 @@ export class EngineService {
                 const canProceed = await this.canProceedToNode(instanceId, nextNodeId);
                 if (!canProceed) {
                   this.log.log(`Skipping publish for node ${nextNodeId} - waiting for all prerequisites to complete`);
+
+                  // Emit activity update event
                   continue;
                 }
-                
-                // Check if the edge has a condition (type "if") that is met
-                const edgeConditionMet = await this.checkEdgeCondition(instanceId, nodeId, nextNodeId, { input: nextInput });
-                if (!edgeConditionMet) {
-                  this.log.log(`Skipping publish for node ${nextNodeId} - edge condition not met`);
-                  continue;
+
+                if (kind === 'join') {
+                  const edgeConditionMet = await this.checkEdgeCondition(instanceId, nodeId, nextNodeId, { input: nextInput });
+                  if (!edgeConditionMet) {
+                    this.log.log(`Skipping publish for node ${nextNodeId} - edge condition not met`);
+                    continue;
+                  }
                 }
-                
+
                 await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
                 this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
               }
@@ -413,7 +422,7 @@ export class EngineService {
                 WHERE id=$1 AND status='running'
               `, [instanceId]);
               this.log.log(`No next node found, marking instance as completed: instanceId=${instanceId}`);
-              
+
               // Emit instance completed event
               if (this.eventsGateway) {
                 const { rows: instanceRows } = await this.db.query(`
@@ -435,7 +444,7 @@ export class EngineService {
         } else {
           this.log.log(`Timer node executed, next node will be published when timer fires: instanceId=${instanceId}, nodeId=${nodeId}`);
         }
-        
+
         return {
           id: activityId,
           status: 'success',
@@ -450,10 +459,10 @@ export class EngineService {
           WHERE id=$2
           RETURNING finished_at
         `, [String(e.message || e), activityId]);
-        
+
         const finishedAt = failedRows[0]?.finished_at;
         await client.query('COMMIT');
-        
+
         // Emit activity failed event
         this.emitActivityUpdateEvent(
           instanceId,
@@ -468,7 +477,7 @@ export class EngineService {
           startedAt,
           finishedAt
         );
-        
+
         throw e;
       }
     } finally {
@@ -485,21 +494,21 @@ export class EngineService {
       WHERE n.id=$1`, [nodeId]);
     if (!nodeRows.length) return;
     const node = nodeRows[0];
-    
+
     // Fetch edges for this node
     const { rows: edgeRows } = await this.db.query(`
       SELECT e.*, n2.id as target_node_id
       FROM _edge e
       JOIN _node n2 ON n2.id = e.target_id
       WHERE e.source_id = $1`, [nodeId]);
-    
+
     const edges = edgeRows.map((e: any) => ({
       from: nodeId,
       to: e.target_node_id,
       type: e.kind === 'if' ? 'if' : 'normal',
       condition: e.condition || undefined
     }));
-    
+
     const nodeWithEdges = { ...node, edges };
     const instanceState = await this.instanceState(instanceId);
     const nextNodeIds = await this.nextFromEdges(nodeWithEdges, input, instanceState);

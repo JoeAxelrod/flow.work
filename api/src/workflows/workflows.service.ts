@@ -54,7 +54,7 @@ export class WorkflowsService {
         const data = JSON.stringify(n.data ?? {});
         // Validate and sanitize node kind - convert invalid values to 'http'
         const rawKind = n.kind as string;
-        const validKinds = ['http', 'hook', 'timer'];
+        const validKinds = ['http', 'hook', 'timer', 'join'];
         const kind = validKinds.includes(rawKind) ? rawKind : 'http';
 
         let dbId: string;

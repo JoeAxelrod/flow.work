@@ -108,6 +108,7 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
             <option value="http">HTTP</option>
             <option value="hook">Hook</option>
             <option value="timer">Timer</option>
+            <option value="join">Join</option>
           </select>
         </div>
 

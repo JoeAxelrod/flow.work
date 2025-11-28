@@ -2,7 +2,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- enums
 DO $$ BEGIN
-  CREATE TYPE node_kind AS ENUM ('http','hook','timer');
+  CREATE TYPE node_kind AS ENUM ('http','hook','timer','join');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN

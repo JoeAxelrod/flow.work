@@ -38,7 +38,7 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 
-type NodeKind = 'http' | 'hook' | 'timer';
+type NodeKind = 'http' | 'hook' | 'timer' | 'join';
 
 
 interface Node {
@@ -140,6 +140,21 @@ function getKindIcon(kind: NodeKind) {
         >
           <circle cx="12" cy="12" r="10" />
           <polyline points="12 6 12 12 16 14" />
+        </svg>
+      );
+    case 'join':
+      return (
+        <svg
+          width={iconSize}
+          height={iconSize}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
         </svg>
       );
     default:

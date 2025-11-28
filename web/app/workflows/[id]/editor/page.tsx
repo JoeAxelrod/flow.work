@@ -273,6 +273,9 @@ export default function WorkflowEditorPage() {
 
   // Socket connection for real-time updates
   const socketRef = useRef<Socket | null>(null);
+  
+  // Track last processed instance data to prevent infinite loops
+  const lastProcessedInstanceDataRef = useRef<string | null>(null);
 
   // Fetch workflow
   const fetchWorkflow = useCallback(async () => {
@@ -480,9 +483,26 @@ export default function WorkflowEditorPage() {
 
   // Enrich edges with instance data - mark used edges in green
   useEffect(() => {
-    if (!isInstanceMode || !instanceData || edges.length === 0 || nodes.length === 0) {
+    if (!isInstanceMode || !instanceData || !edges || edges.length === 0 || nodes.length === 0) {
       return;
     }
+    
+    // Create a signature of the instance data to detect actual changes
+    const instanceDataSignature = JSON.stringify(
+      instanceData.nodes?.map((n: any) => ({
+        nodeId: n.nodeId,
+        status: n.status,
+        startedAt: n.startedAt,
+        finishedAt: n.finishedAt,
+      })) || []
+    );
+    
+    // Skip if we've already processed this exact instance data
+    if (lastProcessedInstanceDataRef.current === instanceDataSignature) {
+      return;
+    }
+    
+    lastProcessedInstanceDataRef.current = instanceDataSignature;
     
     // Create a map of nodeId -> instanceData for quick lookup
     const nodeInstanceMap = new Map<string, any>();
@@ -490,19 +510,55 @@ export default function WorkflowEditorPage() {
       nodeInstanceMap.set(n.nodeId, n);
     });
 
+    // Create a map of nodeId -> kind (http/timer/join/...)
+    const nodeKindMap = new Map<string, string>();
+    nodes.forEach((n) => {
+      nodeKindMap.set(n.id, n.data?.kind);
+    });
+
     setEdges((currentEdges) => {
-      return currentEdges.map((edge) => {
+      if (!currentEdges || currentEdges.length === 0) {
+        return currentEdges;
+      }
+      
+      let hasChanges = false;
+      const updatedEdges = currentEdges.map((edge) => {
         const sourceInstance = nodeInstanceMap.get(edge.source);
         const targetInstance = nodeInstanceMap.get(edge.target);
+        const sourceKind = nodeKindMap.get(edge.source);
+        const targetKind = nodeKindMap.get(edge.target);
 
-        // An edge is used if both source and target nodes were executed
-        // and the target was executed after (or at the same time as) the source
-        const isUsed = 
-          sourceInstance?.startedAt && 
-          targetInstance?.startedAt &&
-          new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+        let isUsed = false;
 
-        if (isUsed) {
+        if (targetKind === 'join') {
+          if (sourceKind === 'timer') {
+            // Timer → join: only green after join actually finished
+            isUsed =
+              !!sourceInstance &&
+              sourceInstance.status === 'success' &&
+              !!targetInstance &&
+              targetInstance.status === 'success';
+          } else {
+            // Other inputs into join: green as soon as source succeeded
+            isUsed = !!sourceInstance && sourceInstance.status === 'success';
+          }
+        } else {
+          // Normal edges: both source and target executed, target not before source
+          isUsed =
+            !!sourceInstance?.startedAt &&
+            !!targetInstance?.startedAt &&
+            new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+        }
+
+        const shouldBeGreen = isUsed;
+        const isCurrentlyGreen = edge.style?.stroke === '#10b981';
+
+        // Only update if state needs to change
+        if (shouldBeGreen && !isCurrentlyGreen) {
+          hasChanges = true;
+          console.log(
+            `[Edge Highlighting] Marking edge green: ${edge.source} -> ${edge.target} (sourceKind=${sourceKind}, targetKind=${targetKind})`
+          );
           return {
             ...edge,
             style: {
@@ -510,16 +566,18 @@ export default function WorkflowEditorPage() {
               strokeWidth: 3,
             },
           };
-        }
-        // Reset style if edge was previously marked but is no longer used
-        if (edge.style?.stroke === '#10b981') {
+        } else if (!shouldBeGreen && isCurrentlyGreen) {
+          hasChanges = true;
           const { style, ...rest } = edge;
           return rest;
         }
         return edge;
       });
+
+      // Only return new array if something changed
+      return hasChanges ? updatedEdges : currentEdges;
     });
-  }, [instanceData, isInstanceMode, setEdges]);
+  }, [instanceData, isInstanceMode, nodes, setEdges]);
 
   // Handle node click for metadata
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -933,7 +991,7 @@ export default function WorkflowEditorPage() {
 
   // Auto-save workflow (debounced)
   const autoSave = useCallback(async () => {
-    if (isInitialLoadRef.current || !workflowData) return;
+    if (isInitialLoadRef.current || !workflowData || isInstanceMode) return;
   
     const saveStartTime = Date.now();
     setIsSaving(true);
@@ -996,7 +1054,7 @@ export default function WorkflowEditorPage() {
         setIsSaving(false);
       }
     }
-  }, [workflowData, nodes, edges, setNodes, setEdges]);
+  }, [workflowData, nodes, edges, setNodes, setEdges, isInstanceMode]);
   
 
   // Debounced save function
@@ -1019,7 +1077,7 @@ export default function WorkflowEditorPage() {
 
   // Auto-save when nodes or edges change
   useEffect(() => {
-    if (!workflowData || isInitialLoadRef.current) {
+    if (!workflowData || isInitialLoadRef.current || isInstanceMode) {
       return;
     }
   
@@ -1036,7 +1094,7 @@ export default function WorkflowEditorPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [nodes, edges, debouncedSave, workflowData]);
+  }, [nodes, edges, debouncedSave, workflowData, isInstanceMode]);
   
 
   // Loading state
