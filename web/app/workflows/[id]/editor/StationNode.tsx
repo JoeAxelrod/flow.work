@@ -96,6 +96,7 @@ export function StationNode({ data, id }: StationNodeProps) {
   const isHook = data.kind === 'hook';
   const isInstanceMode = data.isInstanceMode || false;
   const instanceData = data.instanceData;
+  const executionCount = instanceData?.executionCount ?? 0;
   const { getEdges } = useReactFlow();
   const allowConnections = !isInstanceMode;
 
@@ -198,6 +199,29 @@ export function StationNode({ data, id }: StationNodeProps) {
         </div>
         <span>{data.kind}</span>
       </div>
+
+      {/* execution count badge (only if ran more than once) */}
+      {executionCount > 1 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '4px',
+            right: '4px',
+            background: '#111827',
+            color: 'white',
+            padding: '2px 6px',
+            borderRadius: '999px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            lineHeight: 1,
+            minWidth: '18px',
+            textAlign: 'center',
+          }}
+          title={`Executed ${executionCount} times`}
+        >
+          {executionCount}
+        </div>
+      )}
 
       <div
         style={{

@@ -48,6 +48,8 @@ export type FlowNode = Node<{
   data: Record<string, any>;
   isInstanceMode?: boolean;
   instanceData?: {
+    activityId?: string;
+    executionCount?: number;
     status: string;
     input: any;
     output: any;

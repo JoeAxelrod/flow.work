@@ -396,42 +396,29 @@ export default function WorkflowEditorPage() {
           };
         }
         
-        const existingNodeIndex = prev.nodes?.findIndex((n: any) => n.nodeId === activityData.nodeId);
-        
-        if (existingNodeIndex !== undefined && existingNodeIndex >= 0) {
-          // Update existing node
-          const updatedNodes = [...(prev.nodes || [])];
-          updatedNodes[existingNodeIndex] = {
-            ...updatedNodes[existingNodeIndex],
-            status: activityData.status,
-            input: activityData.input,
-            output: activityData.output,
-            error: activityData.error,
-            startedAt: activityData.startedAt,
-            finishedAt: activityData.finishedAt,
-          };
-          return { ...prev, nodes: updatedNodes };
+        const nodes = [...(prev.nodes || [])];
+        const normalized = {
+          id: activityData.id,
+          nodeId: activityData.nodeId,
+          nodeName: activityData.nodeName,
+          nodeKind: activityData.nodeKind,
+          status: activityData.status,
+          input: activityData.input,
+          output: activityData.output,
+          error: activityData.error,
+          startedAt: activityData.startedAt,
+          finishedAt: activityData.finishedAt,
+          createdAt: activityData.createdAt || activityData.startedAt,
+          updatedAt: activityData.updatedAt || activityData.finishedAt || activityData.startedAt,
+        };
+        // Keep full history: update by activityId, append if it's a new execution
+        const existingActivityIndex = nodes.findIndex((n: any) => n.id === activityData.id);
+        if (existingActivityIndex >= 0) {
+          nodes[existingActivityIndex] = { ...nodes[existingActivityIndex], ...normalized };
         } else {
-          // Add new node activity
-          const newNode = {
-            id: activityData.id,
-            nodeId: activityData.nodeId,
-            nodeName: activityData.nodeName,
-            nodeKind: activityData.nodeKind,
-            status: activityData.status,
-            input: activityData.input,
-            output: activityData.output,
-            error: activityData.error,
-            startedAt: activityData.startedAt,
-            finishedAt: activityData.finishedAt,
-            createdAt: activityData.startedAt,
-            updatedAt: activityData.finishedAt || activityData.startedAt,
-          };
-          return {
-            ...prev,
-            nodes: [...(prev.nodes || []), newNode],
-          };
+          nodes.push(normalized);
         }
+        return { ...prev, nodes };
       });
     });
 
@@ -457,25 +444,44 @@ export default function WorkflowEditorPage() {
   // Enrich nodes with instance data when instance data is loaded
   useEffect(() => {
     if (isInstanceMode && instanceData && nodes.length > 0) {
-      const enrichedNodes = nodes.map((node) => {
-        const instanceNode = instanceData.nodes?.find((n: any) => n.nodeId === node.id);
-        if (instanceNode) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              instanceData: {
-                status: instanceNode.status,
-                input: instanceNode.input,
-                output: instanceNode.output,
-                error: instanceNode.error,
-                startedAt: instanceNode.startedAt,
-                finishedAt: instanceNode.finishedAt,
-              },
-            },
-          };
+      const byNode = new Map<string, { count: number; latest: any; latestTs: number }>();
+      for (const act of instanceData.nodes || []) {
+        const nodeId = act.nodeId;
+        const ts = new Date(
+          act.updatedAt || act.finishedAt || act.startedAt || act.createdAt || 0
+        ).getTime();
+        const prevAgg = byNode.get(nodeId);
+        if (!prevAgg) {
+          byNode.set(nodeId, { count: 1, latest: act, latestTs: ts });
+        } else {
+          const nextCount = prevAgg.count + 1;
+          if (ts >= prevAgg.latestTs) {
+            byNode.set(nodeId, { count: nextCount, latest: act, latestTs: ts });
+          } else {
+            byNode.set(nodeId, { ...prevAgg, count: nextCount });
+          }
         }
-        return node;
+      }
+      const enrichedNodes = nodes.map((node) => {
+        const agg = byNode.get(node.id);
+        if (!agg) return node;
+        const instanceNode = agg.latest;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            instanceData: {
+              activityId: instanceNode.id,
+              executionCount: agg.count,
+              status: instanceNode.status,
+              input: instanceNode.input,
+              output: instanceNode.output,
+              error: instanceNode.error,
+              startedAt: instanceNode.startedAt,
+              finishedAt: instanceNode.finishedAt,
+            },
+          },
+        };
       });
       setNodes(enrichedNodes);
     }
@@ -504,10 +510,21 @@ export default function WorkflowEditorPage() {
     
     lastProcessedInstanceDataRef.current = instanceDataSignature;
     
-    // Create a map of nodeId -> instanceData for quick lookup
+    // Create a map of nodeId -> latest instance activity for quick lookup
     const nodeInstanceMap = new Map<string, any>();
     instanceData.nodes?.forEach((n: any) => {
-      nodeInstanceMap.set(n.nodeId, n);
+      const prev = nodeInstanceMap.get(n.nodeId);
+      if (!prev) {
+        nodeInstanceMap.set(n.nodeId, n);
+        return;
+      }
+      const prevTs = new Date(
+        prev.updatedAt || prev.finishedAt || prev.startedAt || prev.createdAt || 0
+      ).getTime();
+      const ts = new Date(
+        n.updatedAt || n.finishedAt || n.startedAt || n.createdAt || 0
+      ).getTime();
+      if (ts >= prevTs) nodeInstanceMap.set(n.nodeId, n);
     });
 
     // Create a map of nodeId -> kind (http/timer/join/...)
