@@ -52,7 +52,10 @@ export class WorkflowsService {
       for (const n of (def.nodes ?? def.stations ?? [])) {
         const pos  = JSON.stringify(n.position ?? {});
         const data = JSON.stringify(n.data ?? {});
-        const kind = n.kind as string; // 'http'|'hook'|'timer'|'join'|'noop'
+        // Validate and sanitize node kind - convert invalid values to 'http'
+        const rawKind = n.kind as string;
+        const validKinds = ['http', 'hook', 'timer'];
+        const kind = validKinds.includes(rawKind) ? rawKind : 'http';
 
         let dbId: string;
         

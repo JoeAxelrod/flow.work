@@ -19,22 +19,68 @@ export class EngineService {
   ) {}
 
   private evalCond(cond:string, ctx:any): boolean {
-    const m = cond?.match(/^\s*([a-zA-Z0-9_.]+)\s*=\s*(.+)\s*$/);
-    if (!m) return false;
-    const path = m[1]; const rightRaw = m[2];
-    const val = path.split('.').reduce((a:any,k)=> (a==null? a : a[k]), ctx);
-    let right:any = rightRaw;
-    if (/^\d+(\.\d+)?$/.test(rightRaw)) right = Number(rightRaw);
-    else if (/^"(.*)"$/.test(rightRaw)) right = rightRaw.slice(1,-1);
-    return val === right;
+    if (!cond || !cond.trim()) return false;
+    
+    // Support multiple operators: =, <, >, <=, >=, !=, <>
+    const operators = ['<=', '>=', '!=', '<>', '<', '>', '='];
+    let operator: string | null = null;
+    let operatorIndex = -1;
+    
+    for (const op of operators) {
+      const index = cond.indexOf(op);
+      if (index !== -1) {
+        operator = op;
+        operatorIndex = index;
+        break;
+      }
+    }
+    
+    if (!operator || operatorIndex === -1) return false;
+    
+    const leftPath = cond.substring(0, operatorIndex).trim();
+    const rightRaw = cond.substring(operatorIndex + operator.length).trim();
+    
+    // Resolve the left side value from context (supports input.something format)
+    const val = leftPath.split('.').reduce((a:any, k) => (a == null ? a : a[k]), ctx);
+    
+    // Parse the right side value
+    let right: any = rightRaw;
+    if (/^\d+(\.\d+)?$/.test(rightRaw)) {
+      right = Number(rightRaw);
+    } else if (/^"(.*)"$/.test(rightRaw)) {
+      right = rightRaw.slice(1, -1);
+    } else if (/^'(.*)'$/.test(rightRaw)) {
+      right = rightRaw.slice(1, -1);
+    }
+    
+    // Compare based on operator
+    switch (operator) {
+      case '=':
+        return val == right;
+      case '<':
+        return Number(val) < Number(right);
+      case '>':
+        return Number(val) > Number(right);
+      case '<=':
+        return Number(val) <= Number(right);
+      case '>=':
+        return Number(val) >= Number(right);
+      case '!=':
+      case '<>':
+        return val !== right;
+      default:
+        return false;
+    }
   }
 
   private async nextFromEdges(nodeRow:any, payload:any, instanceState:any): Promise<string[]> {
     const edges: Edge[] = nodeRow.edges || [];
     const nextNodes: string[] = [];
+    // Merge instance state and current payload to create context with 'input' key
+    const context = { input: { ...instanceState, ...payload } };
     for (const e of edges) {
       if (e.type === 'if') {
-        const ok = this.evalCond(e.condition || '', { activity_metadata: payload, worflow_activity_state: instanceState });
+        const ok = this.evalCond(e.condition || '', context);
         if (ok) nextNodes.push(e.to);
       } else if (!e.type || e.type === 'normal') {
         nextNodes.push(e.to);
@@ -85,6 +131,44 @@ export class EngineService {
     }
     
     return canProceed;
+  }
+
+  /**
+   * Checks if an edge condition is met for a specific edge between source and target nodes
+   */
+  private async checkEdgeCondition(instanceId: string, sourceNodeId: string, targetNodeId: string, context: any): Promise<boolean> {
+    // Get the edge between source and target
+    const { rows: edgeRows } = await this.db.query(`
+      SELECT e.*
+      FROM _edge e
+      WHERE e.source_id = $1 AND e.target_id = $2
+      LIMIT 1
+    `, [sourceNodeId, targetNodeId]);
+    
+    if (edgeRows.length === 0) {
+      // No edge found, treat as normal edge (always proceed)
+      return true;
+    }
+    
+    const edge = edgeRows[0];
+    
+    // If edge is not conditional, always proceed
+    if (edge.kind !== 'if' || !edge.condition) {
+      return true;
+    }
+    
+    // Evaluate the condition
+    // The context should have 'input' key with the workflow state
+    const conditionMet = this.evalCond(edge.condition, context);
+    
+    if (!conditionMet) {
+      this.log.log(
+        `Edge condition not met: sourceNodeId=${sourceNodeId}, targetNodeId=${targetNodeId}, ` +
+        `condition="${edge.condition}"`
+      );
+    }
+    
+    return conditionMet;
   }
 
   /**
@@ -303,15 +387,23 @@ export class EngineService {
             if (nextNodeIds.length > 0) {
               const instanceState = await this.instanceState(instanceId);
               const nextInput = { ...instanceState, ...output };
-              // Publish to all next nodes, but only if all prerequisites are met
+              // Publish to all next nodes, but only if all prerequisites are met and edge conditions are satisfied
               for (const nextNodeId of nextNodeIds) {
                 const canProceed = await this.canProceedToNode(instanceId, nextNodeId);
-                if (canProceed) {
-                  await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
-                  this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
-                } else {
+                if (!canProceed) {
                   this.log.log(`Skipping publish for node ${nextNodeId} - waiting for all prerequisites to complete`);
+                  continue;
                 }
+                
+                // Check if the edge has a condition (type "if") that is met
+                const edgeConditionMet = await this.checkEdgeCondition(instanceId, nodeId, nextNodeId, { input: nextInput });
+                if (!edgeConditionMet) {
+                  this.log.log(`Skipping publish for node ${nextNodeId} - edge condition not met`);
+                  continue;
+                }
+                
+                await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
+                this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
               }
             } else {
               // No next node found - workflow-instance is complete

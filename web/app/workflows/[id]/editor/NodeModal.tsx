@@ -17,6 +17,13 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
   const saveButtonText = isEditMode ? 'Save' : 'Add Node';
   const saveButtonColor = isEditMode ? '#4f46e5' : '#10b981';
 
+  // Ensure config.data is always an object and kind defaults to 'http'
+  const normalizedConfig = {
+    ...config,
+    kind: config.kind || 'http',
+    data: config.data || {},
+  };
+
   return (
     <div
       style={{
@@ -59,8 +66,8 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
           <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Name</label>
           <input
             type="text"
-            value={config.name}
-            onChange={(e) => onConfigChange({ ...config, name: e.target.value })}
+            value={normalizedConfig.name}
+            onChange={(e) => onConfigChange({ ...normalizedConfig, name: e.target.value })}
             placeholder="Node name"
             readOnly={isReadOnly}
             disabled={isReadOnly}
@@ -77,12 +84,12 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Kind</label>
+          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Kind {normalizedConfig.kind}</label>
           <select
-            value={config.kind}
+            value={normalizedConfig.kind || 'http'}
             onChange={(e) =>
               onConfigChange({
-                ...config,
+                ...normalizedConfig,
                 kind: e.target.value as NodeKind,
                 data: {}, // Reset data when kind changes
               })
@@ -104,16 +111,16 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
           </select>
         </div>
 
-        {config.kind === 'http' && (
+        {normalizedConfig.kind === 'http' && (
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>URL</label>
             <input
               type="text"
-              value={config.data.url || ''}
+              value={normalizedConfig.data.url || ''}
               onChange={(e) =>
                 onConfigChange({
-                  ...config,
-                  data: { ...config.data, url: e.target.value },
+                  ...normalizedConfig,
+                  data: { ...normalizedConfig.data, url: e.target.value },
                 })
               }
               placeholder="https://httpbin.org/post"
@@ -132,18 +139,18 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
           </div>
         )}
 
-        {config.kind === 'timer' && (
+        {normalizedConfig.kind === 'timer' && (
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
               Delay (milliseconds)
             </label>
             <input
               type="number"
-              value={config.data.ms || ''}
+              value={normalizedConfig.data.ms || ''}
               onChange={(e) =>
                 onConfigChange({
-                  ...config,
-                  data: { ...config.data, ms: parseInt(e.target.value) || 0 },
+                  ...normalizedConfig,
+                  data: { ...normalizedConfig.data, ms: parseInt(e.target.value) || 0 },
                 })
               }
               placeholder="30000"

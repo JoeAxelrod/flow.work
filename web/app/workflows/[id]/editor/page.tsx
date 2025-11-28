@@ -22,7 +22,7 @@ import ReactFlow, {
 
 import 'reactflow/dist/style.css';
 import { getWorkflow, importWorkflow, getInstance, API } from '../../../api-client';
-import { NodeConfig, EdgeConfig, WorkflowData } from './types';
+import { NodeConfig, EdgeConfig, WorkflowData, FlowNode } from './types';
 import {
   nodesToFlowNodes,
   edgesToFlowEdges,
@@ -230,7 +230,7 @@ export default function WorkflowEditorPage() {
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [newNodeConfig, setNewNodeConfig] = useState<NodeConfig>({
     name: '',
-    kind: 'noop',
+    kind: 'http',
     data: {},
   });
   const [editingEdge, setEditingEdge] = useState<Edge | null>(null);
@@ -241,7 +241,7 @@ export default function WorkflowEditorPage() {
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [nodeConfig, setNodeConfig] = useState<NodeConfig>({
     name: '',
-    kind: 'noop',
+    kind: 'http',
     data: {},
   });
 
@@ -257,6 +257,7 @@ export default function WorkflowEditorPage() {
   const [showSaveToast, setShowSaveToast] = useState(false);
   const isInitialLoadRef = useRef(true);
   const isServerSyncRef = useRef(false);
+  const debouncedSaveRef = useRef<(() => void) | null>(null);
   
   // Undo/Redo history
   const historyRef = useRef<Array<{ nodes: Node[]; edges: Edge[] }>>([]);
@@ -282,8 +283,17 @@ export default function WorkflowEditorPage() {
       setWorkflowData(data);
       console.log(data)
 
-      const flowNodes = nodesToFlowNodes(data.nodes || data.stations || []);
-      const flowEdges = edgesToFlowEdges(data.edges);
+      const flowNodes = nodesToFlowNodes(data.nodes || data.stations || []).map((node) => {
+        // Preserve all existing node data and add isInstanceMode
+        return {
+          ...node,
+          data: {
+            ...(node.data || {}),
+            isInstanceMode: isInstanceMode,
+          },
+        };
+      });
+      const flowEdges = edgesToFlowEdges(data.edges || []);
 
       setNodes(flowNodes);
       setEdges(flowEdges);
@@ -293,7 +303,7 @@ export default function WorkflowEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [workflowId, setNodes, setEdges]);
+  }, [workflowId, isInstanceMode, setNodes, setEdges]);
 
   // Fetch instance data if in instance mode
   const fetchInstance = useCallback(async () => {
@@ -470,43 +480,45 @@ export default function WorkflowEditorPage() {
 
   // Enrich edges with instance data - mark used edges in green
   useEffect(() => {
-    if (isInstanceMode && instanceData && edges.length > 0 && nodes.length > 0) {
-      // Create a map of nodeId -> instanceData for quick lookup
-      const nodeInstanceMap = new Map<string, any>();
-      instanceData.nodes?.forEach((n: any) => {
-        nodeInstanceMap.set(n.nodeId, n);
-      });
-
-      setEdges((currentEdges) => {
-        return currentEdges.map((edge) => {
-          const sourceInstance = nodeInstanceMap.get(edge.source);
-          const targetInstance = nodeInstanceMap.get(edge.target);
-
-          // An edge is used if both source and target nodes were executed
-          // and the target was executed after (or at the same time as) the source
-          const isUsed = 
-            sourceInstance?.startedAt && 
-            targetInstance?.startedAt &&
-            new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
-
-          if (isUsed) {
-            return {
-              ...edge,
-              style: {
-                stroke: '#10b981', // green color
-                strokeWidth: 3,
-              },
-            };
-          }
-          // Reset style if edge was previously marked but is no longer used
-          if (edge.style?.stroke === '#10b981') {
-            const { style, ...rest } = edge;
-            return rest;
-          }
-          return edge;
-        });
-      });
+    if (!isInstanceMode || !instanceData || edges.length === 0 || nodes.length === 0) {
+      return;
     }
+    
+    // Create a map of nodeId -> instanceData for quick lookup
+    const nodeInstanceMap = new Map<string, any>();
+    instanceData.nodes?.forEach((n: any) => {
+      nodeInstanceMap.set(n.nodeId, n);
+    });
+
+    setEdges((currentEdges) => {
+      return currentEdges.map((edge) => {
+        const sourceInstance = nodeInstanceMap.get(edge.source);
+        const targetInstance = nodeInstanceMap.get(edge.target);
+
+        // An edge is used if both source and target nodes were executed
+        // and the target was executed after (or at the same time as) the source
+        const isUsed = 
+          sourceInstance?.startedAt && 
+          targetInstance?.startedAt &&
+          new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+
+        if (isUsed) {
+          return {
+            ...edge,
+            style: {
+              stroke: '#10b981', // green color
+              strokeWidth: 3,
+            },
+          };
+        }
+        // Reset style if edge was previously marked but is no longer used
+        if (edge.style?.stroke === '#10b981') {
+          const { style, ...rest } = edge;
+          return rest;
+        }
+        return edge;
+      });
+    });
   }, [instanceData, isInstanceMode, setEdges]);
 
   // Handle node click for metadata
@@ -658,7 +670,7 @@ export default function WorkflowEditorPage() {
     };
   }, [nodes, edges, debouncedSaveToHistory, workflowData]);
 
-  // Listen for edit and delete node events from custom node component
+  // Listen for edit, copy, and delete node events from custom node component
   useEffect(() => {
     const handleEditNode = (event: CustomEvent) => {
       const nodeId = event.detail.nodeId;
@@ -667,9 +679,31 @@ export default function WorkflowEditorPage() {
         setEditingNode(nodeId);
         setNodeConfig({
           name: node.data.label || '',
-          kind: node.data.kind || 'noop',
+          kind: node.data.kind,
           data: node.data.data || {},
         });
+      }
+    };
+
+    const handleCopyNode = (event: CustomEvent) => {
+      const nodeId = event.detail.nodeId;
+      const nodeToCopy = nodes.find((n) => n.id === nodeId);
+      if (nodeToCopy) {
+        // Generate new ID for the copied node
+        const newId = generateNodeId(nodes);
+        // Calculate new position (offset by 50px to the right and down)
+        const newPosition = {
+          x: (nodeToCopy.position?.x || 0) + 50,
+          y: (nodeToCopy.position?.y || 0) + 50,
+        };
+        // Create copied node with same data but new ID and position
+        const copiedNode: FlowNode = {
+          ...nodeToCopy,
+          id: newId,
+          position: newPosition,
+        };
+        // Add the copied node
+        setNodes((nds) => [...nds, copiedNode]);
       }
     };
 
@@ -682,9 +716,11 @@ export default function WorkflowEditorPage() {
     };
 
     window.addEventListener('editNode' as any, handleEditNode);
+    window.addEventListener('copyNode' as any, handleCopyNode);
     window.addEventListener('deleteNode' as any, handleDeleteNode);
     return () => {
       window.removeEventListener('editNode' as any, handleEditNode);
+      window.removeEventListener('copyNode' as any, handleCopyNode);
       window.removeEventListener('deleteNode' as any, handleDeleteNode);
     };
   }, [nodes, setNodes, setEdges]);
@@ -782,9 +818,18 @@ export default function WorkflowEditorPage() {
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
     setEditingEdge(edge);
+    const condition = (edge.data as any)?.condition || '';
+    // Normalize condition to start with "input." if it's an "if" type edge
+    const edgeType = (edge.data as any)?.type || 'normal';
+    let normalizedCondition = condition;
+    if (edgeType === 'if' && condition && !condition.startsWith('input.')) {
+      normalizedCondition = 'input.' + condition;
+    } else if (edgeType === 'if' && !condition) {
+      normalizedCondition = 'input.';
+    }
     setEdgeConfig({
-      type: (edge.data as any)?.type || 'normal',
-      condition: (edge.data as any)?.condition || '',
+      type: edgeType,
+      condition: normalizedCondition,
     });
   }, []);
 
@@ -837,7 +882,7 @@ export default function WorkflowEditorPage() {
 
     setNodes((nds) => [...nds, newNode]);
     setShowAddNodeModal(false);
-    setNewNodeConfig({ name: '', kind: 'noop', data: {} });
+    setNewNodeConfig({ name: '', kind: 'http', data: {} });
     // Auto-save will be triggered by the nodes change effect
   }, [nodes, newNodeConfig, setNodes]);
 
@@ -851,7 +896,12 @@ export default function WorkflowEditorPage() {
 
     setEditingEdge(null);
     setEdgeConfig({ type: 'normal', condition: '' });
-    // Auto-save will be triggered by the edges change effect
+    // Explicitly trigger workflow save
+    setTimeout(() => {
+      if (debouncedSaveRef.current) {
+        debouncedSaveRef.current();
+      }
+    }, 0);
   }, [editingEdge, edgeConfig, setEdges]);
 
   // Delete edge
@@ -872,8 +922,13 @@ export default function WorkflowEditorPage() {
     );
 
     setEditingNode(null);
-    setNodeConfig({ name: '', kind: 'noop', data: {} });
-    // Auto-save will be triggered by the nodes change effect
+    setNodeConfig({ name: '', kind: 'http', data: {} });
+    // Explicitly trigger workflow save
+    setTimeout(() => {
+      if (debouncedSaveRef.current) {
+        debouncedSaveRef.current();
+      }
+    }, 0);
   }, [editingNode, nodeConfig, setNodes]);
 
   // Auto-save workflow (debounced)
@@ -956,6 +1011,11 @@ export default function WorkflowEditorPage() {
       autoSave();
     }, 500);
   }, [autoSave]);
+  
+  // Store debouncedSave in ref so it can be called from handlers defined earlier
+  useEffect(() => {
+    debouncedSaveRef.current = debouncedSave;
+  }, [debouncedSave]);
 
   // Auto-save when nodes or edges change
   useEffect(() => {
@@ -1140,7 +1200,7 @@ export default function WorkflowEditorPage() {
             onSave={handleAddNode}
             onCancel={() => {
               setShowAddNodeModal(false);
-              setNewNodeConfig({ name: '', kind: 'noop', data: {} });
+              setNewNodeConfig({ name: '', kind: 'http', data: {} });
             }}
           />
         )}
@@ -1168,7 +1228,7 @@ export default function WorkflowEditorPage() {
             onSave={handleSaveNode}
             onCancel={() => {
               setEditingNode(null);
-              setNodeConfig({ name: '', kind: 'noop', data: {} });
+              setNodeConfig({ name: '', kind: 'http', data: {} });
             }}
             isReadOnly={isInstanceMode}
           />

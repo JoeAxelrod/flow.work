@@ -59,22 +59,6 @@ function getKindIcon(kind: NodeKind) {
           <polyline points="12 6 12 12 16 14" />
         </svg>
       );
-    case 'join':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-        </svg>
-      );
-    case 'noop':
     default:
       return (
         <svg
@@ -98,6 +82,7 @@ export function StationNode({ data, id }: StationNodeProps) {
   const isInstanceMode = data.isInstanceMode || false;
   const instanceData = data.instanceData;
   const { getEdges } = useReactFlow();
+  const allowConnections = !isInstanceMode;
 
   useEffect(() => {
     console.log('[StationNode] mounted, edges:', getEdges());
@@ -120,7 +105,7 @@ export function StationNode({ data, id }: StationNodeProps) {
 
   // In instance mode, always use activity-based colors (gray/green/red), never purple
   // Outside instance mode, use purple for nodes without activity, gray/green/red for nodes with activity
-  const borderColor = isInstanceMode 
+  const borderColor = isInstanceMode
     ? getBorderColor() // In instance mode: always gray/green/red based on activity
     : (instanceData ? getBorderColor() : '#4f46e5'); // Outside instance mode: purple if no activity, otherwise activity-based
 
@@ -137,23 +122,31 @@ export function StationNode({ data, id }: StationNodeProps) {
       }}
     >
       {/* 2 handles: left + right. Each can be start OR end (with ConnectionMode.Loose). */}
-      {!isHook && !isInstanceMode && (
+      {!isHook && (
         <>
           <Handle
             id="left"
             type="source"
             position={Position.Left}
-            style={{ top: '50%' }}
-            isConnectableStart
-            isConnectableEnd
+            style={{
+              top: '50%',
+              pointerEvents: allowConnections ? 'auto' : 'none',
+              opacity: allowConnections ? 1 : 0,
+            }}
+            isConnectableStart={allowConnections}
+            isConnectableEnd={allowConnections}
           />
           <Handle
             id="right"
             type="source"
             position={Position.Right}
-            style={{ top: '50%' }}
-            isConnectableStart
-            isConnectableEnd
+            style={{
+              top: '50%',
+              pointerEvents: allowConnections ? 'auto' : 'none',
+              opacity: allowConnections ? 1 : 0,
+            }}
+            isConnectableStart={allowConnections}
+            isConnectableEnd={allowConnections}
           />
         </>
       )}
@@ -212,9 +205,13 @@ export function StationNode({ data, id }: StationNodeProps) {
             </div>
           )}
         </div>
-        {instanceData && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', flexShrink: 0 }}>
           <button
-            onClick={handleMetadataToggle}
+            onClick={(e) => {
+              e.stopPropagation();
+              const event = new CustomEvent('editNode', { detail: { nodeId: id } });
+              window.dispatchEvent(event);
+            }}
             style={{
               background: '#4f46e5',
               border: 'none',
@@ -226,9 +223,8 @@ export function StationNode({ data, id }: StationNodeProps) {
               alignItems: 'center',
               justifyContent: 'center',
               padding: 0,
-              marginLeft: '8px',
             }}
-            title="View metadata"
+            title="Settings"
           >
             <svg
               width="14"
@@ -240,20 +236,13 @@ export function StationNode({ data, id }: StationNodeProps) {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
             </svg>
           </button>
-        )}
-        {!isInstanceMode && (
-          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', width: '80px', flexShrink: 0 }}>
+          {instanceData && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const event = new CustomEvent('editNode', { detail: { nodeId: id } });
-                window.dispatchEvent(event);
-              }}
+              onClick={handleMetadataToggle}
               style={{
                 background: '#4f46e5',
                 border: 'none',
@@ -266,7 +255,7 @@ export function StationNode({ data, id }: StationNodeProps) {
                 justifyContent: 'center',
                 padding: 0,
               }}
-              title="Settings"
+              title="View metadata"
             >
               <svg
                 width="14"
@@ -278,50 +267,89 @@ export function StationNode({ data, id }: StationNodeProps) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
             </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm('Are you sure you want to delete this node?')) {
-                  const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
+          )}
+          {!isInstanceMode && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const event = new CustomEvent('copyNode', { detail: { nodeId: id } });
                   window.dispatchEvent(event);
-                }
-              }}
-              style={{
-                background: '#ef4444',
-                border: 'none',
-                borderRadius: '4px',
-                width: '24px',
-                height: '24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-              }}
-              title="Delete node"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                }}
+                style={{
+                  background: '#10b981',
+                  border: 'none',
+                  borderRadius: '4px',
+                  width: '24px',
+                  height: '24px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                }}
+                title="Copy node"
               >
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 0-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </button>
-          </div>
-        )}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm('Are you sure you want to delete this node?')) {
+                    const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
+                    window.dispatchEvent(event);
+                  }
+                }}
+                style={{
+                  background: '#ef4444',
+                  border: 'none',
+                  borderRadius: '4px',
+                  width: '24px',
+                  height: '24px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                }}
+                title="Delete node"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 0-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

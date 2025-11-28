@@ -74,13 +74,23 @@ export function EdgeModal({
           <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Edge Type</label>
           <select
             value={config.type}
-            onChange={(e) =>
+            onChange={(e) => {
+              const newType = e.target.value as EdgeType;
+              let newCondition = config.condition;
+              if (newType === 'if') {
+                // When switching to "if", ensure condition starts with "input."
+                if (!newCondition || !newCondition.startsWith('input.')) {
+                  newCondition = newCondition ? 'input.' + newCondition.replace(/^input\./, '') : 'input.';
+                }
+              } else {
+                newCondition = '';
+              }
               onConfigChange({
                 ...config,
-                type: e.target.value as EdgeType,
-                condition: e.target.value !== 'if' ? '' : config.condition,
-              })
-            }
+                type: newType,
+                condition: newCondition,
+              });
+            }}
             disabled={isReadOnly}
             style={{
               width: '100%',
@@ -103,8 +113,41 @@ export function EdgeModal({
             <input
               type="text"
               value={config.condition}
-              onChange={(e) => onConfigChange({ ...config, condition: e.target.value })}
-              placeholder="activity_metadata.body.someparam = 5"
+              onChange={(e) => {
+                let value = e.target.value;
+                // Force value to start with "input."
+                if (!value.startsWith('input.')) {
+                  if (value.startsWith('input')) {
+                    // If it starts with "input" but missing the dot, add the dot after "input"
+                    value = 'input.' + value.slice(5);
+                  } else if (value.length > 0) {
+                    // If user is typing something else, prepend "input."
+                    value = 'input.' + value;
+                  } else {
+                    // Empty value, set to "input."
+                    value = 'input.';
+                  }
+                }
+                onConfigChange({ ...config, condition: value });
+              }}
+              onBlur={(e) => {
+                // Ensure value starts with "input." on blur as well
+                let value = e.target.value;
+                if (!value.startsWith('input.')) {
+                  if (value.startsWith('input')) {
+                    // If it starts with "input" but missing the dot, add the dot after "input"
+                    value = 'input.' + value.slice(5);
+                  } else if (value.length > 0) {
+                    // If user typed something else, prepend "input."
+                    value = 'input.' + value;
+                  } else {
+                    // Empty value, set to "input."
+                    value = 'input.';
+                  }
+                  onConfigChange({ ...config, condition: value });
+                }
+              }}
+              placeholder="input.someparam < 5"
               readOnly={isReadOnly}
               disabled={isReadOnly}
               style={{
@@ -118,7 +161,7 @@ export function EdgeModal({
               }}
             />
             <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-              Example: activity_metadata.body.someparam = 5
+              Example: input.someparam {'<'} 5
             </div>
           </div>
         )}

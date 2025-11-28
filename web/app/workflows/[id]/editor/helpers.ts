@@ -18,6 +18,38 @@ export function nodesToFlowNodes(nodes: WorkflowNode[]): FlowNode[] {
 }
 
 /**
+ * Extract operator and value from a condition string
+ * Supports: =, <, >, <=, >=, !=, <>
+ */
+function extractConditionParts(condition: string): { operator: string; value: string } | null {
+  // Check for two-character operators first (<=, >=, !=, <>)
+  const twoCharOperators = ['<=', '>=', '!=', '<>'];
+  for (const op of twoCharOperators) {
+    const index = condition.indexOf(op);
+    if (index !== -1) {
+      const value = condition.substring(index + op.length).trim();
+      if (value) {
+        return { operator: op, value };
+      }
+    }
+  }
+  
+  // Check for single-character operators (<, >, =)
+  const singleCharOperators = ['<', '>', '='];
+  for (const op of singleCharOperators) {
+    const index = condition.indexOf(op);
+    if (index !== -1) {
+      const value = condition.substring(index + op.length).trim();
+      if (value) {
+        return { operator: op, value };
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Transform workflow edges to ReactFlow edges
  */
 export function edgesToFlowEdges(edges: WorkflowEdge[]): FlowEdge[] {
@@ -34,7 +66,14 @@ export function edgesToFlowEdges(edges: WorkflowEdge[]): FlowEdge[] {
       markerEnd: {
         type: MarkerType.ArrowClosed,
       },
-      label: isConditional ? `if...=${edge.condition!.split('=')[1]}` : undefined,
+      label: isConditional ? (() => {
+        const parts = extractConditionParts(edge.condition!);
+        if (parts && parts.value) {
+          return `if...${parts.operator} ${parts.value}`;
+        }
+        // Show "if..." if condition exists but no valid operator/value found
+        return 'if...';
+      })() : undefined,
       labelStyle: edge.type === 'if' ? { fill: '#ef4444', fontWeight: 'bold' } : undefined,
       data: {
         type: edge.type || 'normal',
@@ -175,7 +214,14 @@ export function updateEdgeWithConfig(edge: Edge, config: EdgeConfig): Edge {
     markerEnd: {
       type: MarkerType.ArrowClosed,
     },
-    label: isConditional ? `if...=${config.condition.split('=')[1]}` : undefined,
+    label: isConditional ? (() => {
+      const parts = extractConditionParts(config.condition);
+      if (parts && parts.value) {
+        return `if...${parts.operator} ${parts.value}`;
+      }
+      // Show "if..." if condition exists but no valid operator/value found
+      return 'if...';
+    })() : undefined,
     labelStyle: config.type === 'if' ? { fill: '#ef4444', fontWeight: 'bold' } : undefined,
     data: {
       type: config.type,

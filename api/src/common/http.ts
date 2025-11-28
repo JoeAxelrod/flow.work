@@ -15,7 +15,7 @@ export async function httpCall(cfg:any, input:any, timeoutMs:number) {
     const text = await res.text();
     let data: any; try { data = JSON.parse(text); } catch { data = { text }; }
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0,300)}`);
-    return { status: res.status, data };
+    return { ...data };
   } finally { clearTimeout(to); }
 }
 
