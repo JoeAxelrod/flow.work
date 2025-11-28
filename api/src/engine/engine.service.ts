@@ -91,23 +91,22 @@ export class EngineService {
 
   /**
    * Checks if all prerequisite activities have completed for a target node
-   * Returns true if the node has 0 or 1 incoming edges, or if all source nodes have completed
+   * Returns true if the node has 0 or 1 incoming edges, or if all distinct source nodes have completed
    */
-  private async canProceedToNode(instanceId: string, targetNodeId: string): Promise<boolean> {
+  async canProceedToNode(instanceId: string, targetNodeId: string): Promise<boolean> {
     // Get all edges targeting this node
     const { rows: incomingEdges } = await this.db.query(`
       SELECT source_id FROM _edge WHERE target_id = $1
     `, [targetNodeId]);
 
-    const incomingEdgeCount = incomingEdges.length;
+    // Get distinct source nodes (handle duplicate edges)
+    const sourceNodeIds = [...new Set(incomingEdges.map((e: any) => e.source_id))];
+    const required = sourceNodeIds.length;
 
     // If 0 or 1 incoming edge, we can proceed immediately
-    if (incomingEdgeCount <= 1) {
+    if (required <= 1) {
       return true;
     }
-
-    // If more than 1 incoming edge, check if all source nodes have completed activities
-    const sourceNodeIds = incomingEdges.map((e: any) => e.source_id);
 
     // Count how many distinct source nodes have completed activities for this instance
     const { rows: completedCountRows } = await this.db.query(`
@@ -120,13 +119,13 @@ export class EngineService {
 
     const completedCount = parseInt(completedCountRows[0]?.completed_count || '0', 10);
 
-    // Only proceed if all source nodes have completed
-    const canProceed = completedCount >= incomingEdgeCount;
+    // Only proceed if all distinct source nodes have completed
+    const canProceed = completedCount >= required;
 
     if (!canProceed) {
       this.log.log(
         `Waiting for all prerequisites: targetNodeId=${targetNodeId}, ` +
-        `incomingEdges=${incomingEdgeCount}, completed=${completedCount}`
+        `required=${required}, completed=${completedCount}`
       );
     }
 
@@ -226,7 +225,7 @@ export class EngineService {
   /**
    * Emits an activity update event via the events gateway
    */
-  private emitActivityUpdateEvent(
+  emitActivityUpdateEvent(
     instanceId: string,
     activityId: string,
     nodeId: string,
@@ -345,9 +344,42 @@ export class EngineService {
           case 'timer':
             const ms = Number(node.data?.ms ?? 1000);
             const dueAt = Date.now() + ms;
-            await this.rabbitMQ.publishTimer(ms, { instanceId, nodeId, workflowId: node.workflow_id, dueAt });
             output = { scheduledFor: dueAt };
-            break;
+            // Store scheduledFor in output while timer is running
+            await client.query(`
+              UPDATE _activity SET output=$1, updated_at=now()
+              WHERE id=$2
+            `, [JSON.stringify(output), activityId]);
+            await client.query('COMMIT');
+            client.release();
+            // Publish timer and return early - activity stays 'running' until timer fires
+            await this.rabbitMQ.publishTimer(ms, {
+              instanceId,
+              nodeId,
+              workflowId: node.workflow_id,
+              dueAt,
+              activityId, // Important: pass activityId so timer handler can mark it success
+            });
+            // Emit activity update with output (timer is running)
+            this.emitActivityUpdateEvent(
+              instanceId,
+              activityId,
+              nodeId,
+              nodeLabel,
+              nodeKind,
+              'running',
+              activityRows[0].input,
+              output,
+              null,
+              startedAt,
+              null
+            );
+            return {
+              id: activityId,
+              status: 'running',
+              input: activityRows[0].input,
+              output: output
+            };
           case 'join':
             // Join node: pass through input, waits for all incoming edges to complete
             // The canProceedToNode check ensures all prerequisites are met before execution
@@ -391,18 +423,30 @@ export class EngineService {
           try {
             const nextNodeIds = await this.findNextNodes(instanceId, nodeId, output);
             if (nextNodeIds.length > 0) {
+              // Fetch target kinds once
+              const { rows: nextNodeRows } = await this.db.query(
+                `SELECT id, kind FROM _node WHERE id = ANY($1::uuid[])`,
+                [nextNodeIds]
+              );
+              const nextKind = new Map<string, string>(nextNodeRows.map((r: any) => [r.id, r.kind]));
+
               const instanceState = await this.instanceState(instanceId);
               const nextInput = { ...instanceState, ...output };
-              // Publish to all next nodes, but only if all prerequisites are met and edge conditions are satisfied
+              
+              // Publish to all next nodes, but only gate join targets
               for (const nextNodeId of nextNodeIds) {
-                const canProceed = await this.canProceedToNode(instanceId, nextNodeId);
-                if (!canProceed) {
-                  this.log.log(`Skipping publish for node ${nextNodeId} - waiting for all prerequisites to complete`);
+                const targetKind = nextKind.get(nextNodeId);
 
-                  // Emit activity update event
-                  continue;
+                // 1) Only JOIN targets are gated
+                if (targetKind === 'join') {
+                  const canProceed = await this.canProceedToNode(instanceId, nextNodeId);
+                  if (!canProceed) {
+                    this.log.log(`Skipping publish for join node ${nextNodeId} - waiting for all prerequisites to complete`);
+                    continue;
+                  }
                 }
 
+                // 2) Edge conditions only matter when SOURCE is join
                 if (kind === 'join') {
                   const edgeConditionMet = await this.checkEdgeCondition(instanceId, nodeId, nextNodeId, { input: nextInput });
                   if (!edgeConditionMet) {

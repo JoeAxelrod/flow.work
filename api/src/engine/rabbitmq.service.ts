@@ -71,8 +71,44 @@ export class RabbitMQService implements OnModuleDestroy {
     );
   }
 
-  private async onTimerFired(m: { instanceId:string; nodeId:string; workflowId:string; dueAt:number }) {
+  private async onTimerFired(m: { instanceId:string; nodeId:string; workflowId:string; dueAt:number; activityId?:string }) {
     try {
+      const activityId = m.activityId;
+      if (!activityId) {
+        this.log.warn(`Timer fired without activityId: ${JSON.stringify(m)}`);
+        return;
+      }
+
+      // Mark timer activity as success
+      const output = { scheduledFor: m.dueAt, firedAt: Date.now() };
+      const { rows: finished } = await this.db.query(`
+        UPDATE _activity
+        SET status='success', output=$1, finished_at=now(), updated_at=now()
+        WHERE id=$2 AND status='running'
+        RETURNING started_at, finished_at, input
+      `, [JSON.stringify(output), activityId]);
+
+      if (finished.length === 0) {
+        // Already processed (idempotent)
+        this.log.log(`Timer activity ${activityId} already processed`);
+        return;
+      }
+
+      // Emit activity success event
+      this.engineService.emitActivityUpdateEvent(
+        m.instanceId,
+        activityId,
+        m.nodeId,
+        'Timer',
+        'timer',
+        'success',
+        finished[0].input,
+        output,
+        null,
+        finished[0].started_at,
+        finished[0].finished_at
+      );
+
       // Get instance state for input
       const { rows: activityRows } = await this.db.query(
         `SELECT output FROM _activity WHERE instance_id=$1 ORDER BY created_at ASC`,
@@ -84,8 +120,26 @@ export class RabbitMQService implements OnModuleDestroy {
       const nextNodeIds = await this.engineService.findNextNodes(m.instanceId, m.nodeId, instanceState);
       
       if (nextNodeIds.length > 0) {
-        // Publish next activities to Kafka (handle multiple next nodes)
+        // Fetch target kinds once
+        const { rows: nextNodeRows } = await this.db.query(
+          `SELECT id, kind FROM _node WHERE id = ANY($1::uuid[])`,
+          [nextNodeIds]
+        );
+        const nextKind = new Map<string, string>(nextNodeRows.map((r: any) => [r.id, r.kind]));
+
+        // Publish next activities to Kafka with same gating logic as executeActivity
         for (const nextNodeId of nextNodeIds) {
+          const targetKind = nextKind.get(nextNodeId);
+
+          // Only JOIN targets are gated
+          if (targetKind === 'join') {
+            const canProceed = await this.engineService.canProceedToNode(m.instanceId, nextNodeId);
+            if (!canProceed) {
+              this.log.log(`Skipping publish for join node ${nextNodeId} - waiting for all prerequisites to complete`);
+              continue;
+            }
+          }
+
           await this.kafka.publishActivity(m.instanceId, nextNodeId, instanceState);
         }
         this.log.log(`Timer fired: Published next activity to Kafka: instanceId=${m.instanceId}, nextNodeIds=${nextNodeIds.join(', ')}`);

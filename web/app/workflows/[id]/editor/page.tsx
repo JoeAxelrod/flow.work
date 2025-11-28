@@ -520,6 +520,12 @@ export default function WorkflowEditorPage() {
       if (!currentEdges || currentEdges.length === 0) {
         return currentEdges;
       }
+
+      // Calculate in-degree for each node (for merge detection)
+      const indegree = new Map<string, number>();
+      currentEdges.forEach((e) => {
+        indegree.set(e.target, (indegree.get(e.target) || 0) + 1);
+      });
       
       let hasChanges = false;
       const updatedEdges = currentEdges.map((edge) => {
@@ -527,27 +533,42 @@ export default function WorkflowEditorPage() {
         const targetInstance = nodeInstanceMap.get(edge.target);
         const sourceKind = nodeKindMap.get(edge.source);
         const targetKind = nodeKindMap.get(edge.target);
+        const edgeType = (edge.data as any)?.type ?? 'normal';
+        const targetIn = indegree.get(edge.target) || 0;
 
         let isUsed = false;
 
-        if (targetKind === 'join') {
-          if (sourceKind === 'timer') {
-            // Timer → join: only green after join actually finished
-            isUsed =
-              !!sourceInstance &&
-              sourceInstance.status === 'success' &&
-              !!targetInstance &&
-              targetInstance.status === 'success';
-          } else {
-            // Other inputs into join: green as soon as source succeeded
-            isUsed = !!sourceInstance && sourceInstance.status === 'success';
-          }
-        } else {
-          // Normal edges: both source and target executed, target not before source
+        if (edgeType === 'if') {
+          // Conditional edge: only green if that branch actually ran
           isUsed =
+            sourceInstance?.status === 'success' &&
             !!sourceInstance?.startedAt &&
             !!targetInstance?.startedAt &&
             new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+        } else {
+          if (targetKind === 'join') {
+            if (sourceKind === 'timer') {
+              // Timer → join: only green after join finished
+              isUsed = 
+                sourceInstance?.status === 'success' && 
+                targetInstance?.status === 'success';
+            } else {
+              // Other inputs into join: green as soon as source succeeded
+              isUsed = sourceInstance?.status === 'success';
+            }
+          } else if (sourceKind === 'timer') {
+            // Timer → non-join: only after timer fired (timer success)
+            isUsed = sourceInstance?.status === 'success';
+          } else if (targetIn > 1) {
+            // Merge into non-join: prerequisite-style
+            isUsed = sourceInstance?.status === 'success';
+          } else {
+            // Simple linear: keep ordering semantics
+            isUsed =
+              !!sourceInstance?.startedAt &&
+              !!targetInstance?.startedAt &&
+              new Date(targetInstance.startedAt) >= new Date(sourceInstance.startedAt);
+          }
         }
 
         const shouldBeGreen = isUsed;
