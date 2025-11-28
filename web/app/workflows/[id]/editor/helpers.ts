@@ -55,7 +55,7 @@ export function flowNodesToWorkflowNodes(nodes: Node[]): WorkflowNode[] {
   return nodes.map((node) => ({
     id: node.id,
     name: node.data.label || node.id,
-    kind: node.data.kind || 'noop',
+    kind: node.data.kind || 'http',
     position: node.position || { x: 0, y: 0 },
     data: node.data.data || {},
   }));
@@ -122,8 +122,6 @@ export function prepareNodeData(kind: string, configData: Record<string, any>): 
     case 'timer':
       return { ms: configData.ms || 30000 };
     case 'hook':
-    case 'join':
-    case 'noop':
     default:
       return {};
   }

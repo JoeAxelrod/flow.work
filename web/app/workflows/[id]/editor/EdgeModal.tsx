@@ -94,7 +94,6 @@ export function EdgeModal({
           >
             <option value="normal">Normal</option>
             <option value="if">If (Conditional)</option>
-            <option value="loop">Loop</option>
           </select>
         </div>
 

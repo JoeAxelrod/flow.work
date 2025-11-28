@@ -1,7 +1,7 @@
 import { Edge, Node } from 'reactflow';
 
-export type NodeKind = 'http' | 'hook' | 'timer' | 'join' | 'noop';
-export type EdgeType = 'normal' | 'if' | 'loop';
+export type NodeKind = 'http' | 'hook' | 'timer';
+export type EdgeType = 'normal' | 'if';
 
 export interface WorkflowData {
   workflow: {

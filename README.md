@@ -15,13 +15,10 @@ Workflow orchestration platform with visual editor, HTTP actions, durable timers
 - `http`: Execute HTTP requests
 - `hook`: Webhook entry point (waits for external POST)
 - `timer`: Delay execution using RabbitMQ
-- `join`: Wait for multiple paths with conditions
-- `noop`: No operation
 
 ### Edge Types
 - `normal`: Unconditional flow
 - `if`: Conditional flow (evaluates condition from activity state)
-- `loop`: Loop flow
 
 ## Quick Start
 

@@ -5,7 +5,7 @@ import { RabbitMQService } from './rabbitmq.service';
 import { KafkaService } from './kafka.service';
 import { EventsGateway } from '../events/events.gateway';
 
-type Edge = { from:string; to:string; type?: 'normal'|'if'|'loop'; condition?: string };
+type Edge = { from:string; to:string; type?: 'normal'|'if'; condition?: string };
 
 @Injectable()
 export class EngineService {
@@ -41,6 +41,50 @@ export class EngineService {
       }
     }
     return nextNodes;
+  }
+
+  /**
+   * Checks if all prerequisite activities have completed for a target node
+   * Returns true if the node has 0 or 1 incoming edges, or if all source nodes have completed
+   */
+  private async canProceedToNode(instanceId: string, targetNodeId: string): Promise<boolean> {
+    // Get all edges targeting this node
+    const { rows: incomingEdges } = await this.db.query(`
+      SELECT source_id FROM _edge WHERE target_id = $1
+    `, [targetNodeId]);
+    
+    const incomingEdgeCount = incomingEdges.length;
+    
+    // If 0 or 1 incoming edge, we can proceed immediately
+    if (incomingEdgeCount <= 1) {
+      return true;
+    }
+    
+    // If more than 1 incoming edge, check if all source nodes have completed activities
+    const sourceNodeIds = incomingEdges.map((e: any) => e.source_id);
+    
+    // Count how many distinct source nodes have completed activities for this instance
+    const { rows: completedCountRows } = await this.db.query(`
+      SELECT COUNT(DISTINCT node_id) as completed_count
+      FROM _activity
+      WHERE instance_id = $1
+        AND node_id = ANY($2::uuid[])
+        AND status = 'success'
+    `, [instanceId, sourceNodeIds]);
+    
+    const completedCount = parseInt(completedCountRows[0]?.completed_count || '0', 10);
+    
+    // Only proceed if all source nodes have completed
+    const canProceed = completedCount >= incomingEdgeCount;
+    
+    if (!canProceed) {
+      this.log.log(
+        `Waiting for all prerequisites: targetNodeId=${targetNodeId}, ` +
+        `incomingEdges=${incomingEdgeCount}, completed=${completedCount}`
+      );
+    }
+    
+    return canProceed;
   }
 
   /**
@@ -176,7 +220,7 @@ export class EngineService {
       const node = nodeRows[0];
       const kind = node.kind;
       const nodeLabel = node.label || 'Unknown';
-      const nodeKind = node.kind || 'noop';
+      const nodeKind = node.kind || 'http';
       
       // Create activity
       const { rows: activityRows } = await client.query(`
@@ -220,43 +264,7 @@ export class EngineService {
             await this.rabbitMQ.publishTimer(ms, { instanceId, nodeId, workflowId: node.workflow_id, dueAt });
             output = { scheduledFor: dueAt };
             break;
-          case 'join':
-            // For join nodes, we need to wait for all incoming branches
-            // Count how many incoming edges lead to this join node
-            const { rows: incomingEdges } = await client.query(`
-              SELECT COUNT(*) as count
-              FROM _edge
-              WHERE target_id = $1
-            `, [nodeId]);
-            
-            const requiredBranches = parseInt(incomingEdges[0]?.count || '0', 10);
-            
-            // Count how many successful activities have already executed for this join node
-            const { rows: joinActivities } = await client.query(`
-              SELECT COUNT(*) as count
-              FROM _activity
-              WHERE instance_id = $1 AND node_id = $2 AND status = 'success'
-            `, [instanceId, nodeId]);
-            
-            const completedBranches = parseInt(joinActivities[0]?.count || '0', 10);
-            
-            this.log.log(
-              `Join node reached: instanceId=${instanceId}, nodeId=${nodeId}, ` +
-              `completedBranches=${completedBranches}, requiredBranches=${requiredBranches}`
-            );
-            
-            // If this is the first branch reaching the join, or if not all branches have arrived yet,
-            // we still mark this activity as success but don't proceed to next nodes
-            // The logic to proceed will be handled after the activity is committed
-            
-            output = { 
-              join: 'ok',
-              completedBranches: completedBranches + 1, // +1 because we're about to mark this as success
-              requiredBranches 
-            };
-            break;
           default:
-            // noop
             output = {};
         }
         
@@ -289,17 +297,21 @@ export class EngineService {
         
         // Find and publish next nodes to Kafka
         // Skip for timer nodes - they will publish the next node when the timer fires
-        // Skip for join nodes until all branches have arrived
-        if (kind !== 'timer' && kind !== 'join') {
+        if (kind !== 'timer') {
           try {
             const nextNodeIds = await this.findNextNodes(instanceId, nodeId, output);
             if (nextNodeIds.length > 0) {
               const instanceState = await this.instanceState(instanceId);
               const nextInput = { ...instanceState, ...output };
-              // Publish to all next nodes
+              // Publish to all next nodes, but only if all prerequisites are met
               for (const nextNodeId of nextNodeIds) {
-                await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
-                this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
+                const canProceed = await this.canProceedToNode(instanceId, nextNodeId);
+                if (canProceed) {
+                  await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
+                  this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
+                } else {
+                  this.log.log(`Skipping publish for node ${nextNodeId} - waiting for all prerequisites to complete`);
+                }
               }
             } else {
               // No next node found - workflow-instance is complete
@@ -327,101 +339,6 @@ export class EngineService {
           } catch (error) {
             // Log error but don't fail the activity execution
             this.log.error(`Failed to publish next node to Kafka: ${String(error)}`, error instanceof Error ? error.stack : undefined);
-          }
-        } else if (kind === 'join') {
-          // For join nodes, check if all branches have arrived before proceeding
-          try {
-            // Re-check after commit to ensure we have the latest count
-            const { rows: joinCheckRows } = await this.db.query(`
-              SELECT 
-                (SELECT COUNT(*) FROM _edge WHERE target_id = $2) as required_branches,
-                (SELECT COUNT(*) FROM _activity WHERE instance_id = $1 AND node_id = $2 AND status = 'success') as completed_branches
-            `, [instanceId, nodeId]);
-            
-            const requiredBranches = parseInt(joinCheckRows[0]?.required_branches || '0', 10);
-            const completedBranches = parseInt(joinCheckRows[0]?.completed_branches || '0', 10);
-            
-            if (requiredBranches === 0) {
-              // No incoming edges - treat as regular node and proceed
-              this.log.log(`Join node has no incoming edges, proceeding normally: instanceId=${instanceId}, nodeId=${nodeId}`);
-              const nextNodeIds = await this.findNextNodes(instanceId, nodeId, output);
-              if (nextNodeIds.length > 0) {
-                const instanceState = await this.instanceState(instanceId);
-                const nextInput = { ...instanceState, ...output };
-                for (const nextNodeId of nextNodeIds) {
-                  await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
-                  this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
-                }
-              } else {
-                await this.db.query(`
-                  UPDATE _instance 
-                  SET status='success', finished_at=now() 
-                  WHERE id=$1 AND status='running'
-                `, [instanceId]);
-                this.log.log(`No next node found, marking instance as completed: instanceId=${instanceId}`);
-                
-                if (this.eventsGateway) {
-                  const { rows: instanceRows } = await this.db.query(`
-                    SELECT status, finished_at FROM _instance WHERE id=$1
-                  `, [instanceId]);
-                  if (instanceRows.length > 0) {
-                    this.eventsGateway.emitInstanceStatusUpdate(instanceId, {
-                      instanceId,
-                      status: instanceRows[0].status,
-                      finishedAt: instanceRows[0].finished_at,
-                    });
-                  }
-                }
-              }
-            } else if (completedBranches >= requiredBranches) {
-              // All branches have arrived - proceed to next nodes
-              this.log.log(
-                `All branches arrived at join node: instanceId=${instanceId}, nodeId=${nodeId}, ` +
-                `completedBranches=${completedBranches}, requiredBranches=${requiredBranches}`
-              );
-              
-              const nextNodeIds = await this.findNextNodes(instanceId, nodeId, output);
-              if (nextNodeIds.length > 0) {
-                const instanceState = await this.instanceState(instanceId);
-                const nextInput = { ...instanceState, ...output };
-                // Publish to all next nodes
-                for (const nextNodeId of nextNodeIds) {
-                  await this.kafka.publishActivity(instanceId, nextNodeId, nextInput);
-                  this.log.log(`Published next activity to Kafka: instanceId=${instanceId}, nextNodeId=${nextNodeId}`);
-                }
-              } else {
-                // No next node found - workflow-instance is complete
-                await this.db.query(`
-                  UPDATE _instance 
-                  SET status='success', finished_at=now() 
-                  WHERE id=$1 AND status='running'
-                `, [instanceId]);
-                this.log.log(`No next node found, marking instance as completed: instanceId=${instanceId}`);
-                
-                // Emit instance completed event
-                if (this.eventsGateway) {
-                  const { rows: instanceRows } = await this.db.query(`
-                    SELECT status, finished_at FROM _instance WHERE id=$1
-                  `, [instanceId]);
-                  if (instanceRows.length > 0) {
-                    this.eventsGateway.emitInstanceStatusUpdate(instanceId, {
-                      instanceId,
-                      status: instanceRows[0].status,
-                      finishedAt: instanceRows[0].finished_at,
-                    });
-                  }
-                }
-              }
-            } else {
-              // Not all branches have arrived yet - wait
-              this.log.log(
-                `Join node waiting for more branches: instanceId=${instanceId}, nodeId=${nodeId}, ` +
-                `completedBranches=${completedBranches}, requiredBranches=${requiredBranches}`
-              );
-            }
-          } catch (error) {
-            // Log error but don't fail the activity execution
-            this.log.error(`Failed to check join node status: ${String(error)}`, error instanceof Error ? error.stack : undefined);
           }
         } else {
           this.log.log(`Timer node executed, next node will be published when timer fires: instanceId=${instanceId}, nodeId=${nodeId}`);

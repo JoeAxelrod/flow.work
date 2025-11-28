@@ -2,11 +2,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- enums
 DO $$ BEGIN
-  CREATE TYPE node_kind AS ENUM ('http','hook','timer','join','noop');
+  CREATE TYPE node_kind AS ENUM ('http','hook','timer');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN
-  CREATE TYPE edge_kind AS ENUM ('normal','if','loop');
+  CREATE TYPE edge_kind AS ENUM ('normal','if');
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN

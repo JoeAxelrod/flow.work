@@ -98,11 +98,9 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
               cursor: isReadOnly ? 'not-allowed' : 'pointer',
             }}
           >
-            <option value="noop">Noop</option>
             <option value="http">HTTP</option>
             <option value="hook">Hook</option>
             <option value="timer">Timer</option>
-            <option value="join">Join</option>
           </select>
         </div>
 
