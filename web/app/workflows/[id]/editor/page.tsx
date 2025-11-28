@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';
 import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 import { useToast } from '../../../components/ToastContext';
+import { io, Socket } from 'socket.io-client';
 
 import ReactFlow, {
   addEdge,
@@ -16,10 +17,11 @@ import ReactFlow, {
   Node,
   MarkerType,
   ConnectionMode,            // ⬅️ add this
+  useReactFlow,
 } from 'reactflow';
 
 import 'reactflow/dist/style.css';
-import { getWorkflow, importWorkflow, getInstance } from '../../../api-client';
+import { getWorkflow, importWorkflow, getInstance, API } from '../../../api-client';
 import { NodeConfig, EdgeConfig, WorkflowData } from './types';
 import {
   nodesToFlowNodes,
@@ -41,6 +43,176 @@ const nodeTypes = {
   node: StationNode,
 };
 const edgeTypes = {};
+
+// Metadata Panel Overlay Component (must be inside ReactFlow context)
+function MetadataPanelOverlay({ nodeId, nodes, onClose }: { nodeId: string; nodes: Node[]; onClose: () => void }) {
+  const { getNode, project, getViewport } = useReactFlow();
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const selectedNode = nodes.find(n => n.id === nodeId);
+  const metadata = selectedNode?.data?.instanceData;
+  
+  const updatePosition = useCallback(() => {
+    if (!selectedNode) return;
+    
+    const node = getNode(nodeId);
+    if (!node) return;
+    
+    // Try to get the actual DOM element
+    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`) as HTMLElement;
+    
+    if (nodeElement) {
+      // Get the ReactFlow container
+      const reactFlowContainer = nodeElement.closest('.react-flow') as HTMLElement;
+      if (reactFlowContainer) {
+        const containerRect = reactFlowContainer.getBoundingClientRect();
+        const nodeRect = nodeElement.getBoundingClientRect();
+        
+        // Calculate position relative to ReactFlow container
+        const x = nodeRect.right - containerRect.left + 20; // 20px spacing
+        const y = nodeRect.top - containerRect.top;
+        
+        setPosition({ x, y });
+        return;
+      }
+    }
+    
+    // Fallback: use project function
+    const nodeWidth = node.width || 180;
+    const spacing = 20;
+    const screenPosition = project({
+      x: node.position.x + nodeWidth + spacing,
+      y: node.position.y,
+    });
+    setPosition(screenPosition);
+  }, [nodeId, getNode, project, selectedNode]);
+  
+  useEffect(() => {
+    updatePosition();
+    
+    // Update position on viewport changes (pan, zoom)
+    const handleViewportChange = () => {
+      updatePosition();
+    };
+    
+    // Listen for ReactFlow viewport changes
+    window.addEventListener('resize', handleViewportChange);
+    const reactFlowContainer = document.querySelector('.react-flow');
+    if (reactFlowContainer) {
+      reactFlowContainer.addEventListener('wheel', handleViewportChange, { passive: true });
+    }
+    
+    // Use MutationObserver to detect when node position changes
+    const observer = new MutationObserver(updatePosition);
+    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
+    if (nodeElement) {
+      observer.observe(nodeElement, { attributes: true, attributeFilter: ['style', 'transform'] });
+    }
+    
+    // Update position periodically to handle pan/zoom
+    const intervalId = setInterval(updatePosition, 100);
+    
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      if (reactFlowContainer) {
+        reactFlowContainer.removeEventListener('wheel', handleViewportChange);
+      }
+      observer.disconnect();
+      clearInterval(intervalId);
+    };
+  }, [nodeId, updatePosition]);
+  
+  if (!metadata || !selectedNode) return null;
+  
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        width: '400px',
+        maxHeight: '80vh',
+        background: 'white',
+        border: '2px solid #4f46e5',
+        borderRadius: '8px',
+        padding: '16px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        zIndex: 1000,
+        overflow: 'auto',
+        pointerEvents: 'auto',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
+          {selectedNode?.data?.label || 'Node Metadata'}
+        </h3>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            fontSize: '20px',
+            cursor: 'pointer',
+            padding: '0',
+            width: '24px',
+            height: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ fontSize: '12px', marginBottom: '12px' }}>
+        <strong>Status:</strong>{' '}
+        <span style={{ 
+          color: metadata.status === 'success' ? '#10b981' : 
+                 metadata.status === 'failed' ? '#ef4444' : '#6b7280' 
+        }}>
+          {metadata.status}
+        </span>
+      </div>
+      {metadata.input && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Input:</div>
+          <pre style={{ 
+            background: '#f3f4f6', 
+            padding: '8px', 
+            borderRadius: '4px', 
+            fontSize: '11px', 
+            overflow: 'auto', 
+            maxHeight: '200px',
+            margin: 0,
+          }}>
+            {JSON.stringify(metadata.input, null, 2)}
+          </pre>
+        </div>
+      )}
+      {metadata.output && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Output:</div>
+          <pre style={{ 
+            background: '#f3f4f6', 
+            padding: '8px', 
+            borderRadius: '4px', 
+            fontSize: '11px', 
+            overflow: 'auto', 
+            maxHeight: '200px',
+            margin: 0,
+          }}>
+            {JSON.stringify(metadata.output, null, 2)}
+          </pre>
+        </div>
+      )}
+      {metadata.error && (
+        <div style={{ marginTop: '12px', color: '#ef4444' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Error:</div>
+          <div style={{ fontSize: '12px' }}>{metadata.error}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function WorkflowEditorPage() {
   const params = useParams();
@@ -98,8 +270,8 @@ export default function WorkflowEditorPage() {
   // Metadata panel state
   const [selectedNodeForMetadata, setSelectedNodeForMetadata] = useState<string | null>(null);
 
-  
-
+  // Socket connection for real-time updates
+  const socketRef = useRef<Socket | null>(null);
 
   // Fetch workflow
   const fetchWorkflow = useCallback(async () => {
@@ -144,6 +316,130 @@ export default function WorkflowEditorPage() {
   useEffect(() => {
     fetchInstance();
   }, [fetchInstance]);
+
+  // Socket connection for real-time updates
+  useEffect(() => {
+    if (!isInstanceMode || !instanceId) {
+      // Disconnect socket if not in instance mode
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      return;
+    }
+
+    // Connect to socket
+    const socketUrl = API.replace('/api/v1', '');
+    const socket = io(`${socketUrl}/workflow-instances`, {
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('Socket connected');
+      socket.emit('join-instance', instanceId);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected');
+    });
+
+    socket.on('joined-instance', (data) => {
+      console.log('Joined instance room:', data);
+    });
+
+    // Listen for activity updates
+    socket.on('activity-update', (activityData: any) => {
+      console.log('Activity update received:', activityData);
+      
+      // Update instance data with new activity
+      setInstanceData((prev: any) => {
+        // If no previous data, create initial structure
+        if (!prev) {
+          return {
+            id: activityData.instanceId,
+            workflowId: '',
+            status: 'running',
+            input: {},
+            output: null,
+            error: null,
+            startedAt: activityData.startedAt,
+            finishedAt: null,
+            nodes: [{
+              id: activityData.id,
+              nodeId: activityData.nodeId,
+              nodeName: activityData.nodeName,
+              nodeKind: activityData.nodeKind,
+              status: activityData.status,
+              input: activityData.input,
+              output: activityData.output,
+              error: activityData.error,
+              startedAt: activityData.startedAt,
+              finishedAt: activityData.finishedAt,
+              createdAt: activityData.startedAt,
+              updatedAt: activityData.finishedAt || activityData.startedAt,
+            }],
+          };
+        }
+        
+        const existingNodeIndex = prev.nodes?.findIndex((n: any) => n.nodeId === activityData.nodeId);
+        
+        if (existingNodeIndex !== undefined && existingNodeIndex >= 0) {
+          // Update existing node
+          const updatedNodes = [...(prev.nodes || [])];
+          updatedNodes[existingNodeIndex] = {
+            ...updatedNodes[existingNodeIndex],
+            status: activityData.status,
+            input: activityData.input,
+            output: activityData.output,
+            error: activityData.error,
+            startedAt: activityData.startedAt,
+            finishedAt: activityData.finishedAt,
+          };
+          return { ...prev, nodes: updatedNodes };
+        } else {
+          // Add new node activity
+          const newNode = {
+            id: activityData.id,
+            nodeId: activityData.nodeId,
+            nodeName: activityData.nodeName,
+            nodeKind: activityData.nodeKind,
+            status: activityData.status,
+            input: activityData.input,
+            output: activityData.output,
+            error: activityData.error,
+            startedAt: activityData.startedAt,
+            finishedAt: activityData.finishedAt,
+            createdAt: activityData.startedAt,
+            updatedAt: activityData.finishedAt || activityData.startedAt,
+          };
+          return {
+            ...prev,
+            nodes: [...(prev.nodes || []), newNode],
+          };
+        }
+      });
+    });
+
+    // Listen for instance status updates
+    socket.on('instance-status-update', (statusData: any) => {
+      console.log('Instance status update received:', statusData);
+      setInstanceData((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: statusData.status,
+          finishedAt: statusData.finishedAt,
+        };
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [isInstanceMode, instanceId]);
 
   // Enrich nodes with instance data when instance data is loaded
   useEffect(() => {
@@ -795,102 +1091,6 @@ export default function WorkflowEditorPage() {
           </div>
         </div>
 
-        {/* Floating Metadata Panel */}
-        {isInstanceMode && selectedNodeForMetadata && (() => {
-          const selectedNode = nodes.find(n => n.id === selectedNodeForMetadata);
-          const metadata = selectedNode?.data?.instanceData;
-          if (!metadata) return null;
-          
-          return (
-            <div
-              style={{
-                position: 'fixed',
-                left: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: '400px',
-                maxHeight: '80vh',
-                background: 'white',
-                border: '2px solid #4f46e5',
-                borderRadius: '8px',
-                padding: '16px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                zIndex: 1000,
-                overflow: 'auto',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-                  {selectedNode?.data?.label || 'Node Metadata'}
-                </h3>
-                <button
-                  onClick={() => setSelectedNodeForMetadata(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    fontSize: '20px',
-                    cursor: 'pointer',
-                    padding: '0',
-                    width: '24px',
-                    height: '24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ fontSize: '12px', marginBottom: '12px' }}>
-                <strong>Status:</strong>{' '}
-                <span style={{ 
-                  color: metadata.status === 'success' ? '#10b981' : 
-                         metadata.status === 'failed' ? '#ef4444' : '#6b7280' 
-                }}>
-                  {metadata.status}
-                </span>
-              </div>
-              {metadata.input && (
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Input:</div>
-                  <pre style={{ 
-                    background: '#f3f4f6', 
-                    padding: '8px', 
-                    borderRadius: '4px', 
-                    fontSize: '11px', 
-                    overflow: 'auto', 
-                    maxHeight: '200px',
-                    margin: 0,
-                  }}>
-                    {JSON.stringify(metadata.input, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {metadata.output && (
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Output:</div>
-                  <pre style={{ 
-                    background: '#f3f4f6', 
-                    padding: '8px', 
-                    borderRadius: '4px', 
-                    fontSize: '11px', 
-                    overflow: 'auto', 
-                    maxHeight: '200px',
-                    margin: 0,
-                  }}>
-                    {JSON.stringify(metadata.output, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {metadata.error && (
-                <div style={{ marginTop: '12px', color: '#ef4444' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Error:</div>
-                  <div style={{ fontSize: '12px' }}>{metadata.error}</div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
 
         {/* ReactFlow Canvas */}
         <div style={{ flex: 1 }}>
@@ -922,6 +1122,13 @@ export default function WorkflowEditorPage() {
             fitView
           >
             <Background />
+            {isInstanceMode && selectedNodeForMetadata && (
+              <MetadataPanelOverlay
+                nodeId={selectedNodeForMetadata}
+                nodes={nodes}
+                onClose={() => setSelectedNodeForMetadata(null)}
+              />
+            )}
           </ReactFlow>
         </div>
 

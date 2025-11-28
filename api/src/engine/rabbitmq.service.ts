@@ -80,13 +80,15 @@ export class RabbitMQService implements OnModuleDestroy {
       );
       const instanceState = activityRows.reduce((acc: any, r: any) => ({ ...acc, ...r.output }), {});
       
-      // Use EngineService's findNextNode to properly handle conditional edges
-      const nextNodeId = await this.engineService.findNextNode(m.instanceId, m.nodeId, instanceState);
+      // Use EngineService's findNextNodes to properly handle conditional edges
+      const nextNodeIds = await this.engineService.findNextNodes(m.instanceId, m.nodeId, instanceState);
       
-      if (nextNodeId) {
-        // Publish next activity to Kafka
-        await this.kafka.publishActivity(m.instanceId, nextNodeId, instanceState);
-        this.log.log(`Timer fired: Published next activity to Kafka: instanceId=${m.instanceId}, nextNodeId=${nextNodeId}`);
+      if (nextNodeIds.length > 0) {
+        // Publish next activities to Kafka (handle multiple next nodes)
+        for (const nextNodeId of nextNodeIds) {
+          await this.kafka.publishActivity(m.instanceId, nextNodeId, instanceState);
+        }
+        this.log.log(`Timer fired: Published next activity to Kafka: instanceId=${m.instanceId}, nextNodeIds=${nextNodeIds.join(', ')}`);
       } else {
         // No next node found - workflow is complete
         await this.db.query(`

@@ -203,6 +203,9 @@ export function StationNode({ data, id }: StationNodeProps) {
           <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
             {data.label}
           </div>
+          <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+            {id.slice(-4)}
+          </div>
           {instanceData && (
             <div style={{ fontSize: '10px', color: instanceData.status === 'success' ? '#10b981' : instanceData.status === 'failed' ? '#ef4444' : '#6b7280', marginTop: '4px' }}>
               Status: {instanceData.status}
@@ -244,7 +247,7 @@ export function StationNode({ data, id }: StationNodeProps) {
           </button>
         )}
         {!isInstanceMode && (
-          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', width: '56px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', width: '80px', flexShrink: 0 }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -263,7 +266,7 @@ export function StationNode({ data, id }: StationNodeProps) {
                 justifyContent: 'center',
                 padding: 0,
               }}
-              title="Edit node"
+              title="Settings"
             >
               <svg
                 width="14"
@@ -275,8 +278,8 @@ export function StationNode({ data, id }: StationNodeProps) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
               </svg>
             </button>
             <button

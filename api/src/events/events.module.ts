@@ -1,12 +1,13 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { EventsController } from './events.controller';
+import { EventsGateway } from './events.gateway';
 import { EngineModule } from '../engine/engine.module';
 
 @Module({
-  imports: [EngineModule],
+  imports: [forwardRef(() => EngineModule)],
   controllers: [EventsController],
-  providers: [EventsService],
-  exports: [EventsService],
+  providers: [EventsService, EventsGateway],
+  exports: [EventsService, EventsGateway],
 })
 export class EventsModule {}

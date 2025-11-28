@@ -22,10 +22,6 @@ import {
   useTheme,
   alpha,
   styled,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
 } from '@mui/material';
 import {
   AccountTree as WorkflowIcon,
@@ -43,6 +39,7 @@ import {
 import { motion } from 'framer-motion';
 
 type NodeKind = 'http' | 'hook' | 'timer' | 'join' | 'noop';
+
 
 interface Node {
   id: string;
@@ -281,7 +278,7 @@ export default function InstancesPage() {
     setDialogOpen(null);
   };
 
-  const getDialogContent = () => {
+  const getModalContent = () => {
     if (!dialogOpen) return null;
     
     const instance = instances.find(i => i.nodes?.some(n => n.id === dialogOpen.nodeId));
@@ -292,57 +289,96 @@ export default function InstancesPage() {
     const data = dialogOpen.type === 'input' ? node.input : node.output;
     
     return (
-      <Dialog
-        open={true}
-        onClose={handleCloseDialog}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-          },
+      <Box
+        onClick={handleCloseDialog}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          bgcolor: 'rgba(0, 0, 0, 0.5)',
+          zIndex: 1300,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: 2,
         }}
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <CodeIcon />
-            <Typography variant="h6">
-              {dialogOpen.type === 'input' ? 'Input' : 'Output'} - {node.nodeName || 'Node'}
-            </Typography>
+        <Card
+          onClick={(e) => e.stopPropagation()}
+          sx={{
+            maxWidth: '800px',
+            width: '100%',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: 2,
+            boxShadow: theme.shadows[24],
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              p: 2,
+              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CodeIcon />
+              <Typography variant="h6">
+                {dialogOpen.type === 'input' ? 'Input' : 'Output'} - {node.nodeName || 'Node'}
+              </Typography>
+            </Box>
+            <IconButton onClick={handleCloseDialog} size="small">
+              <CloseIcon />
+            </IconButton>
           </Box>
-          <IconButton onClick={handleCloseDialog} size="small">
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
           <Box
             sx={{
               p: 2,
-              bgcolor: 'background.paper',
-              borderRadius: 1,
-              border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
-              maxHeight: '60vh',
               overflow: 'auto',
+              flex: 1,
             }}
           >
-            <Typography
-              component="pre"
+            <Box
               sx={{
-                fontFamily: 'monospace',
-                fontSize: '0.875rem',
-                m: 0,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
+                p: 2,
+                bgcolor: alpha(theme.palette.background.paper, 0.5),
+                borderRadius: 1,
+                border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
               }}
             >
-              {JSON.stringify(data, null, 2)}
-            </Typography>
+              <Typography
+                component="pre"
+                sx={{
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  m: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {JSON.stringify(data, null, 2)}
+              </Typography>
+            </Box>
           </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Close</Button>
-        </DialogActions>
-      </Dialog>
+          <Box
+            sx={{
+              p: 2,
+              borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              display: 'flex',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <Button onClick={handleCloseDialog} variant="contained">
+              Close
+            </Button>
+          </Box>
+        </Card>
+      </Box>
     );
   };
 
@@ -595,7 +631,7 @@ export default function InstancesPage() {
                             {/* Nodes/Activities Section */}
                             {instance.nodes && instance.nodes.length > 0 && (
                               <Box sx={{ mt: 1.5 }}>
-                                <Stack spacing={0.75}>
+                                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                                   {instance.nodes.map((node, nodeIndex) => (
                                     <Card
                                       key={node.id}
@@ -604,6 +640,8 @@ export default function InstancesPage() {
                                         border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
                                         position: 'relative',
                                         transition: 'all 0.2s ease',
+                                        width: '240px',
+                                        flex: '0 0 auto',
                                         '&:hover': {
                                           borderColor: alpha(theme.palette.primary.main, 0.3),
                                         },
@@ -780,7 +818,7 @@ export default function InstancesPage() {
           </Box>
         )}
       </Container>
-      {getDialogContent()}
+      {getModalContent()}
     </Box>
   );
 }

@@ -350,11 +350,12 @@ export class WorkflowsService {
     const instancesWithNodes = await Promise.all(
       rows.map(async (row: any) => {
         const { rows: activityRows } = await this.db.query(
-          `SELECT a.*, s.label as node_name, s.kind as node_kind
+          `SELECT a.*, n.label as node_name, n.kind as node_kind
            FROM public._activity a
-           JOIN public._node s ON s.id = a.node_id
+           JOIN public._node n ON n.id = a.node_id
            WHERE a.instance_id = $1
-           ORDER BY a.created_at ASC`,
+           ORDER BY a.created_at ASC
+          `,
           [row.id]
         );
         

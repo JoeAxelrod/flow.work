@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { EngineService } from '../engine/engine.service';
 
 @Injectable()
 export class EventsService {
-  constructor(private engineService: EngineService) {}
+  constructor(
+    @Inject(forwardRef(() => EngineService))
+    private engineService: EngineService
+  ) {}
 
   async handleTimerEvent(timerEvent: any) {
     const { workflowId, waitTime } = timerEvent;

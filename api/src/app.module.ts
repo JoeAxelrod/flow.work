@@ -1,18 +1,17 @@
 import { Module } from '@nestjs/common';
 import { DbModule } from './db.module';
-import { EngineService } from './engine/engine.service';
-import { RabbitMQService } from './engine/rabbitmq.service';
-import { KafkaService } from './engine/kafka.service';
+import { EngineModule } from './engine/engine.module';
 import { EngineController } from './engine/engine.controller';
 import { WorkflowsController } from './workflows/workflows.controller';
 import { WorkflowsService } from './workflows/workflows.service';
 import { HooksController } from './hooks/hooks.controller';
 import { FakeApiController } from './fake-api/fake-api.controller';
 import { FakeApiService } from './fake-api/fake-api.service';
+import { EventsModule } from './events/events.module';
 
 @Module({
-  imports: [DbModule],
+  imports: [DbModule, EngineModule, EventsModule],
   controllers: [EngineController, WorkflowsController, HooksController, FakeApiController],
-  providers: [EngineService, RabbitMQService, KafkaService, WorkflowsService, FakeApiService]
+  providers: [WorkflowsService, FakeApiService]
 })
 export class AppModule {}
