@@ -1,15 +1,83 @@
 services:
-  db:
-    image: postgres:18
+  # DCS (required by Patroni)
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.6.6
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd1
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --initial-cluster=etcd1=http://etcd:2380
+      - --initial-cluster-state=new
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_DB: workflow
-    ports: ["5432:5432"]
+      - ETCDCTL_API=3
+    ports:
+      - "2379:2379"
     volumes:
-      - db18:/var/lib/postgresql
-      - ./postgresql.conf:/etc/postgresql/postgresql.conf
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+      - etcd-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://127.0.0.1:2379"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # Postgres 18 + Patroni node 1
+  pg1:
+    build:
+      context: ./patroni
+    container_name: pg1
+    depends_on:
+      etcd:
+        condition: service_healthy
+    volumes:
+      # Your requested volume structure (mount parent dir, PGDATA is /var/lib/postgresql/data)
+      - pg1-data:/var/lib/postgresql
+      # Your existing config file (used as Patroni custom_conf base)
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./patroni/pg1.yml:/config/patroni.yml:ro
+    environment:
+      - PGDATA=/var/lib/postgresql/data
+    ports:
+      - "5435:5432"   # optional direct access (debug)
+      - "8008:8008"   # Patroni REST API (debug)
+    restart: unless-stopped
+
+  # Postgres 18 + Patroni node 2
+  pg2:
+    build:
+      context: ./patroni
+    container_name: pg2
+    depends_on:
+      etcd:
+        condition: service_healthy
+    volumes:
+      - pg2-data:/var/lib/postgresql
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./patroni/pg2.yml:/config/patroni.yml:ro
+    environment:
+      - PGDATA=/var/lib/postgresql/data
+    ports:
+      - "5436:5432"   # optional direct access (debug)
+      - "8009:8008"   # Patroni REST API (debug, mapped)
+    restart: unless-stopped
+
+  # Stable endpoint (KEEP THIS NAME `db` so your app/dbgate configs don't break)
+  db:
+    image: haproxy:2.9
+    container_name: db
+    depends_on:
+      - pg1
+      - pg2
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5432:5432"   # read-write (primary)
+      - "5433:5433"   # read-only (primary+replicas) optional
+    restart: unless-stopped
 
 
   rabbit:
@@ -66,7 +134,9 @@ services:
 
 
 volumes:
-  db18:
+  etcd-data:
+  pg1-data:
+  pg2-data:
   pgadmin_data:
   kafka-data:
 
