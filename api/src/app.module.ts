@@ -8,9 +8,10 @@ import { HooksController } from './hooks/hooks.controller';
 import { FakeApiController } from './fake-api/fake-api.controller';
 import { FakeApiService } from './fake-api/fake-api.service';
 import { EventsModule } from './events/events.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
-  imports: [DbModule, EngineModule, EventsModule],
+  imports: [DbModule, EngineModule, EventsModule, HealthModule],
   controllers: [EngineController, WorkflowsController, HooksController, FakeApiController],
   providers: [WorkflowsService, FakeApiService]
 })

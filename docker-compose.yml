@@ -119,18 +119,56 @@ services:
   #   ports: ["3000:3000"]
 
 
-  dbgate:
+  # dbgate:
+  #   image: dbgate/dbgate
+  #   depends_on: [db]
+  #   ports: ["3003:3000"]
+  #   environment:
+  #     CONNECTIONS: local
+  #     LABEL_local: Workflow PG
+  #     SERVER_local: db
+  #     USER_local: postgres
+  #     PASSWORD_local: postgres
+  #     ENGINE_local: postgres@dbgate-plugin-postgres
+  #     DATABASE_local: workflow
+
+  dbgate_primary:
     image: dbgate/dbgate
-    depends_on: [db]
-    ports: ["3003:3000"]
+    depends_on:
+      - db
+    ports:
+      - "3003:3000"
     environment:
-      CONNECTIONS: local
-      LABEL_local: Workflow PG
-      SERVER_local: db
-      USER_local: postgres
-      PASSWORD_local: postgres
-      ENGINE_local: postgres@dbgate-plugin-postgres
-      DATABASE_local: workflow
+      DISABLE_AUTH: "true"
+
+      CONNECTIONS: primary
+      LABEL_primary: Workflow PRIMARY
+      SERVER_primary: db
+      PORT_primary: 5432           # HAProxy primary (RW)
+      USER_primary: postgres
+      PASSWORD_primary: postgres
+      ENGINE_primary: postgres@dbgate-plugin-postgres
+      DATABASE_primary: workflow
+
+  dbgate_replica:
+    image: dbgate/dbgate
+    depends_on:
+      - db
+    ports:
+      - "3004:3000"
+    environment:
+      DISABLE_AUTH: "true"
+
+      CONNECTIONS: replica
+      LABEL_replica: Workflow REPLICA
+      SERVER_replica: db
+      PORT_replica: 5433           # HAProxy replica (RO)
+      USER_replica: postgres       # or readonly user created earlier
+      PASSWORD_replica: postgres
+      ENGINE_replica: postgres@dbgate-plugin-postgres
+      DATABASE_replica: workflow
+
+
 
 
 volumes:
