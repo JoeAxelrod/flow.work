@@ -153,18 +153,32 @@ export function calculateNewNodePosition(nodes: Node[]): { x: number; y: number 
 
 /**
  * Prepare node data based on kind
+ * Preserves all fields from configData, including FEEL expressions
  */
 export function prepareNodeData(kind: string, configData: Record<string, any>): Record<string, any> {
+  // Start with all configData to preserve FEEL expressions and other custom fields
+  const result: Record<string, any> = { ...configData };
+  
+  // Set kind-specific defaults if not already present
   switch (kind) {
     case 'http':
-      return { url: configData.url || 'https://httpbin.org/post' };
+      if (!result.url) {
+        result.url = 'https://httpbin.org/post';
+      }
+      break;
     case 'timer':
-      return { ms: configData.ms || 30000 };
+      if (result.ms === undefined || result.ms === null || result.ms === '') {
+        result.ms = 30000;
+      }
+      break;
     case 'hook':
     case 'join':
     default:
-      return {};
+      // No specific defaults needed
+      break;
   }
+  
+  return result;
 }
 
 /**

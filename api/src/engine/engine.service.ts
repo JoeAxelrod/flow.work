@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, forwardRef, Optional } from '@nestjs/common';
 import { Pool } from 'pg';
 import { httpCall } from '../common/http';
+import { evaluateFeelExpression } from '../common/feel';
 import { RabbitMQService } from './rabbitmq.service';
 import { KafkaService } from './kafka.service';
 import { EventsGateway } from '../events/events.gateway';
@@ -287,6 +288,7 @@ export class EngineService {
 
   async executeActivity(instanceId: string, nodeId: string, input: any = {}): Promise<any> {
     const client = await this.db.connect();
+    let clientReleased = false;
     try {
       await client.query('BEGIN');
 
@@ -304,13 +306,51 @@ export class EngineService {
       const kind = node.kind;
       const nodeLabel = node.label || 'Unknown';
       const nodeKind = node.kind || 'http';
+      const nodeData = node.data || {};
 
-      // Create activity
+      // Get instance state for FEEL context
+      const instanceState = await this.instanceState(instanceId);
+      
+      // Prepare node metadata for context
+      const nodeMetadata = {
+        id: node.id,
+        name: node.label,
+        label: node.label,
+        kind: node.kind,
+      };
+      
+      // Apply FEEL input expression if present
+      let transformedInput = input;
+      const inputExpression = nodeData.inputExpression || nodeData.input_expression;
+      if (inputExpression && inputExpression.trim()) {
+        try {
+          // Create context with instance state and current input
+          // input: merged object with all instance state + current input (for convenience)
+          // currentInput: only the raw input passed to this node execution
+          // instanceState: all accumulated outputs from previous nodes
+          const feelContext = {
+            input: { ...instanceState, ...input },
+            instanceState: instanceState,
+            currentInput: input,
+            node: nodeMetadata
+          };
+          const feelResult = await evaluateFeelExpression(inputExpression, feelContext);
+          if (feelResult !== null) {
+            // Merge FEEL result with input, with FEEL result taking precedence
+            transformedInput = { ...input, ...feelResult };
+          }
+        } catch (error: any) {
+          this.log.error(`FEEL input expression error for node ${nodeId}: ${error.message}`);
+          throw new Error(`FEEL input expression error: ${error.message}`);
+        }
+      }
+
+      // Create activity with transformed input
       const { rows: activityRows } = await client.query(`
         INSERT INTO _activity(instance_id, workflow_id, node_id, status, input, started_at)
         VALUES ($1, $2, $3, 'running', $4, now())
         RETURNING id, status, input, output, started_at
-      `, [instanceId, node.workflow_id, nodeId, JSON.stringify(input || {})]);
+      `, [instanceId, node.workflow_id, nodeId, JSON.stringify(transformedInput || {})]);
 
       const activityId = activityRows[0].id;
       const startedAt = activityRows[0].started_at;
@@ -336,15 +376,37 @@ export class EngineService {
         // Execute based on node kind
         switch (kind) {
           case 'http':
-            output = await httpCall(node.data || {}, input, 15000);
+            output = await httpCall(nodeData, transformedInput, 15000);
             break;
           case 'hook':
-            output = { body: input };
+            output = { body: transformedInput };
             break;
           case 'timer':
-            const ms = Number(node.data?.ms ?? 1000);
+            const ms = Number(nodeData?.ms ?? 1000);
             const dueAt = Date.now() + ms;
             output = { scheduledFor: dueAt };
+            
+            // Apply FEEL output expression if present (before storing)
+            const timerOutputExpression = nodeData.outputExpression || nodeData.output_expression;
+            if (timerOutputExpression && timerOutputExpression.trim()) {
+              try {
+                const feelContext = {
+                  input: transformedInput,
+                  output: output,
+                  instanceState: instanceState,
+                  currentOutput: output,
+                  node: nodeMetadata
+                };
+                const feelResult = await evaluateFeelExpression(timerOutputExpression, feelContext);
+                if (feelResult !== null) {
+                  output = { ...output, ...feelResult };
+                }
+              } catch (error: any) {
+                this.log.error(`FEEL output expression error for timer node ${nodeId}: ${error.message}`);
+                throw new Error(`FEEL output expression error: ${error.message}`);
+              }
+            }
+            
             // Store scheduledFor in output while timer is running
             await client.query(`
               UPDATE _activity SET output=$1, updated_at=now()
@@ -352,6 +414,7 @@ export class EngineService {
             `, [JSON.stringify(output), activityId]);
             await client.query('COMMIT');
             client.release();
+            clientReleased = true;
             // Publish timer and return early - activity stays 'running' until timer fires
             await this.rabbitMQ.publishTimer(ms, {
               instanceId,
@@ -383,10 +446,40 @@ export class EngineService {
           case 'join':
             // Join node: pass through input, waits for all incoming edges to complete
             // The canProceedToNode check ensures all prerequisites are met before execution
-            output = input;
+            output = transformedInput;
             break;
           default:
             output = {};
+        }
+
+        // Apply FEEL output expression if present
+        const outputExpression = nodeData.outputExpression || nodeData.output_expression;
+        if (outputExpression && outputExpression.trim()) {
+          try {
+            // Create context with instance state, input, and output
+            // input: the transformed input used for this node execution
+            // output: the raw output from the node execution
+            // currentOutput: same as output (for consistency)
+            // instanceState: all accumulated outputs from previous nodes
+            const feelContext = {
+              input: transformedInput,
+              output: output,
+              instanceState: instanceState,
+              currentOutput: output,
+              node: nodeMetadata
+            };
+            const feelResult = await evaluateFeelExpression(outputExpression, feelContext);
+            if (feelResult !== null) {
+              // Merge FEEL result with output, with FEEL result taking precedence
+              output = { ...output, ...feelResult };
+            }
+            else {
+              this.log.warn(`FEEL output expression returned null for node ${nodeId}`);
+            }
+          } catch (error: any) {
+            this.log.error(`FEEL output expression error for node ${nodeId}: ${error.message}`);
+            throw new Error(`FEEL output expression error: ${error.message}`);
+          }
         }
 
         // Update activity as success
@@ -525,7 +618,9 @@ export class EngineService {
         throw e;
       }
     } finally {
-      client.release();
+      if (!clientReleased) {
+        client.release();
+      }
     }
   }
 

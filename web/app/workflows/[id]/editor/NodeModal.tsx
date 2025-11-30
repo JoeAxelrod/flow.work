@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { NodeConfig, NodeKind } from './types';
 
 interface NodeModalProps {
@@ -12,6 +13,7 @@ interface NodeModalProps {
 }
 
 export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, isReadOnly = false }: NodeModalProps) {
+  const [showInfo, setShowInfo] = useState(false);
   const isEditMode = !!nodeId;
   const title = isReadOnly ? 'View Node' : (isEditMode ? 'Edit Node' : 'Add New Node');
   const saveButtonText = isEditMode ? 'Save' : 'Add Node';
@@ -169,6 +171,216 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
             />
           </div>
         )}
+
+        <div style={{ marginBottom: '16px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <h4 style={{ marginTop: 0, marginBottom: 0, fontSize: '1rem', fontWeight: '600', color: '#374151' }}>
+              JSONata Expressions
+            </h4>
+            <button
+              onClick={() => setShowInfo(!showInfo)}
+              style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                border: '1px solid #d1d5db',
+                backgroundColor: '#f9fafb',
+                color: '#6b7280',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                padding: 0,
+              }}
+              title="Show JSONata examples"
+            >
+              i
+            </button>
+          </div>
+          <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: '#6b7280' }}>
+            Use JSONata expressions to transform input and output. Input/output are always JSON objects.
+            <a 
+              href="https://docs.jsonata.org/simple" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ marginLeft: '8px', color: '#3b82f6', textDecoration: 'underline' }}
+            >
+              Documentation
+            </a>
+          </p>
+
+          {showInfo && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '16px',
+              backgroundColor: '#f9fafb',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              fontSize: '0.875rem',
+            }}>
+              <div style={{ marginBottom: '12px', fontWeight: '600', color: '#374151' }}>
+                JSONata Examples:
+              </div>
+              
+              <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#eff6ff', borderRadius: '4px', fontSize: '0.75rem', color: '#1e40af' }}>
+                <strong>Context Variables:</strong>
+                <div style={{ marginTop: '4px' }}>
+                  • <code>input</code> = instanceState + currentInput (merged, for convenience)<br/>
+                  • <code>currentInput</code> = raw input passed to this node<br/>
+                  • <code>instanceState</code> = all outputs from previous nodes<br/>
+                  • <code>node</code> = node metadata (id, name, label, kind)
+                </div>
+              </div>
+              
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>1. Simple Queries - Navigating Objects:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "userId": input.userId, "name": input.profile.name }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Access nested properties using dot notation
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>2. Array Operations:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "firstItem": input.items[0], "lastItem": input.items[-1], "allIds": input.items.id }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Access array elements by index (0-based, -1 for last)
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>3. String Functions:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "upperName": $uppercase(input.name), "lowerEmail": $lowercase(input.email), "trimmed": $trim(input.description) }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Transform strings: $uppercase(), $lowercase(), $trim()
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>4. Predicate Queries - Filtering:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "activeUsers": input.users[status = "active"], "highValue": input.orders[total > 100] }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Filter arrays based on conditions
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>5. Date/Time Functions:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "timestamp": $now(), "millis": $millis(), "date": $fromMillis(input.timestamp) }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Work with dates: $now(), $millis(), $fromMillis()
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#374151' }}>6. Node Metadata:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {`{ "nodeName": node.name, "nodeId": node.id, "nodeKind": node.kind, "message": "Processing in " & node.name }`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+                  Access node information: node.id, node.name, node.label, node.kind
+                </div>
+              </div>
+
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#6b7280' }}>
+                <a 
+                  href="https://docs.jsonata.org/simple" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ color: '#3b82f6', textDecoration: 'underline' }}
+                >
+                  View full JSONata documentation →
+                </a>
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
+              Input Expression (JSONata)
+            </label>
+            <textarea
+              value={normalizedConfig.data.inputExpression || normalizedConfig.data.input_expression || ''}
+              onChange={(e) =>
+                onConfigChange({
+                  ...normalizedConfig,
+                  data: { 
+                    ...normalizedConfig.data, 
+                    inputExpression: e.target.value,
+                    input_expression: e.target.value // Support both formats
+                  },
+                })
+              }
+              placeholder='Example: { "userId": input.userId, "nodeName": node.name }'
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontFamily: 'monospace',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
+                resize: 'vertical',
+              }}
+            />
+            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+              Available context: input (instanceState + currentInput), instanceState, currentInput (raw input), node (id, name, label, kind)
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
+              Output Expression (JSONata)
+            </label>
+            <textarea
+              value={normalizedConfig.data.outputExpression || normalizedConfig.data.output_expression || ''}
+              onChange={(e) =>
+                onConfigChange({
+                  ...normalizedConfig,
+                  data: { 
+                    ...normalizedConfig.data, 
+                    outputExpression: e.target.value,
+                    output_expression: e.target.value // Support both formats
+                  },
+                })
+              }
+              placeholder='Example: { "processed": true, "result": output.data }'
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontFamily: 'monospace',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
+                resize: 'vertical',
+              }}
+            />
+            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+              Available context: input, output, instanceState, currentOutput (same as output), node (id, name, label, kind)
+            </div>
+          </div>
+        </div>
 
         {!isReadOnly && (
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
