@@ -82,3 +82,9 @@ CREATE TABLE IF NOT EXISTS public._activity (
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_instance ON public._activity(instance_id);
+
+-- replication probe table for health checks
+CREATE TABLE IF NOT EXISTS _replication_probe (
+  id        text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

@@ -1,5 +1,6 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool } from 'pg';
+import { randomUUID } from 'crypto';
 
 type NodeStatus = {
   ok: boolean;
@@ -8,13 +9,14 @@ type NodeStatus = {
   error?: string;
 };
 
-let lastTime = 0;
-
 @Injectable()
 export class HealthService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(@Inject('PG') private readonly pool: Pool) {}
+  constructor(
+    @Inject('PG_PRIMARY') private readonly primaryPool: Pool,
+    @Inject('PG_REPLICA') private readonly replicaPool: Pool,
+  ) {}
 
   onModuleInit() {
     this.checkHealth().catch(err => {
@@ -25,7 +27,7 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       this.checkHealth().catch(err => {
         console.error('[HEALTH] periodic check failed:', err);
       });
-    }, 10_000);
+    }, 30_000);
   }
 
   onModuleDestroy() {
@@ -33,44 +35,48 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async checkHealth() {
-    // 1) DB via HAProxy (db)
+    // 1) Simple check on primary (same as before)
     let dbOk = false;
     try {
-      const res = await this.pool.query('SELECT 1');
+      const res = await this.primaryPool.query('SELECT 1');
       dbOk = res.rowCount === 1;
     } catch (e) {
-      console.error('[HEALTH] DB via HAProxy failed:', e);
+      console.error('[HEALTH] DB via primary failed:', e);
     }
 
-    // Patroni URLs:
-    // when Nest runs on HOST ⇒ use localhost:8008/8009
-    // when Nest runs in DOCKER ⇒ set env to http://pg1:8008 / http://pg2:8009
+    // 2) Patroni node checks (unchanged)
     const pg1Url = process.env.PATRONI_PG1_URL ?? 'http://localhost:8008';
     const pg2Url = process.env.PATRONI_PG2_URL ?? 'http://localhost:8009';
 
     const pg1 = await this.checkPatroniNode(pg1Url);
     const pg2 = await this.checkPatroniNode(pg2Url);
 
-    // print it ones in 3 minutes
-    if (1 || Date.now() - lastTime > 3 * 60 * 1000) {
-      console.log('[HEALTH] cluster', { dbOk, pg1, pg2 });
-      lastTime = Date.now();
-    }
+    // 3) Replication probe: write on primary, read on replica
+    const { ok: replicationOk, lagMs, error: replicationError } =
+      await this.checkReplicationProbe();
+
+    console.log('[HEALTH] cluster', {
+      dbOk,
+      pg1,
+      pg2,
+      replication: {
+        ok: replicationOk,
+        lagMs,
+        error: replicationError,
+      },
+    });
   }
 
   private async checkPatroniNode(baseUrl: string): Promise<NodeStatus> {
-    const url = baseUrl.endsWith('/')
-      ? `${baseUrl}health`
-      : `${baseUrl}/health`;
+    const url = baseUrl.endsWith('/') ? `${baseUrl}health` : `${baseUrl}/health`;
 
     try {
       const res = await fetch(url);
       const body = (await res.json()) as any;
 
-      // Patroni /health returns 200 + JSON with state
       return {
         ok: res.ok && body.state === 'running',
-        role: body.role,   // may be undefined, but keep for logging
+        role: body.role,
         state: body.state,
         error: res.ok ? undefined : `status=${res.status}`,
       };
@@ -80,5 +86,56 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // --- new logic below ---
+
+  private async checkReplicationProbe(): Promise<{
+    ok: boolean;
+    lagMs?: number;
+    error?: string;
+  }> {
+    const id = randomUUID(); // unique per check
+    const started = Date.now();
+
+    const insertSql =
+      'INSERT INTO _replication_probe (id) VALUES ($1) ON CONFLICT (id) DO NOTHING';
+    const deleteSql = 'DELETE FROM _replication_probe WHERE id = $1';
+    const selectSql = 'SELECT id FROM _replication_probe WHERE id = $1';
+
+    try {
+      // Insert on PRIMARY
+      await this.primaryPool.query(insertSql, [id]);
+
+      // Poll REPLICA a few times to allow small replication lag
+      const maxAttempts = 5;
+      const delayMs = 100;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const res = await this.replicaPool.query(selectSql, [id]);
+        if (res.rowCount === 1) {
+          const lagMs = Date.now() - started;
+          return { ok: true, lagMs };
+        }
+
+        // not found yet → small wait then retry
+        if (attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+      }
+
+      return {
+        ok: false,
+        error: 'probe not visible on replica within timeout',
+      };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
+    } finally {
+      // Cleanup on PRIMARY (best-effort)
+      try {
+        await this.primaryPool.query(deleteSql, [id]);
+      } catch {
+        // ignore cleanup error
+      }
+    }
+  }
 }
 
