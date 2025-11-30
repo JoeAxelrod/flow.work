@@ -487,7 +487,7 @@ export default function WorkflowEditorPage() {
     }
   }, [instanceData, isInstanceMode, setNodes]);
 
-  // Enrich edges with instance data - mark used edges in green
+  // Enrich edges with instance data - mark used edges in green and add traversal counts
   useEffect(() => {
     if (!isInstanceMode || !instanceData || !edges || edges.length === 0 || nodes.length === 0) {
       return;
@@ -509,6 +509,25 @@ export default function WorkflowEditorPage() {
     }
     
     lastProcessedInstanceDataRef.current = instanceDataSignature;
+    
+    // Group all activities by nodeId for traversal counting
+    const activitiesByNode = new Map<string, any[]>();
+    instanceData.nodes?.forEach((n: any) => {
+      const nodeId = n.nodeId;
+      if (!activitiesByNode.has(nodeId)) {
+        activitiesByNode.set(nodeId, []);
+      }
+      activitiesByNode.get(nodeId)!.push(n);
+    });
+    
+    // Sort activities by time for each node
+    activitiesByNode.forEach((activities, nodeId) => {
+      activities.sort((a, b) => {
+        const aTime = new Date(a.updatedAt || a.finishedAt || a.startedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.updatedAt || b.finishedAt || b.startedAt || b.createdAt || 0).getTime();
+        return aTime - bTime;
+      });
+    });
     
     // Create a map of nodeId -> latest instance activity for quick lookup
     const nodeInstanceMap = new Map<string, any>();
@@ -532,6 +551,74 @@ export default function WorkflowEditorPage() {
     nodes.forEach((n) => {
       nodeKindMap.set(n.id, n.data?.kind);
     });
+
+    // Function to count edge traversals
+    const countEdgeTraversals = (sourceNodeId: string, targetNodeId: string, edgeType: string, sourceKind: string, targetKind: string, targetIn: number): number => {
+      const sourceActivities = activitiesByNode.get(sourceNodeId) || [];
+      const targetActivities = activitiesByNode.get(targetNodeId) || [];
+      
+      if (sourceActivities.length === 0 || targetActivities.length === 0) {
+        return 0;
+      }
+      
+      // For most cases, count how many times target executed after source succeeded
+      // This is a simplified heuristic that works for most workflow patterns
+      let count = 0;
+      
+      // Sort all activities chronologically to find sequences
+      const allActivities: Array<{ nodeId: string; activity: any; time: number }> = [];
+      
+      sourceActivities.forEach(act => {
+        const time = new Date(act.updatedAt || act.finishedAt || act.startedAt || act.createdAt || 0).getTime();
+        allActivities.push({ nodeId: sourceNodeId, activity: act, time });
+      });
+      
+      targetActivities.forEach(act => {
+        const time = new Date(act.updatedAt || act.finishedAt || act.startedAt || act.createdAt || 0).getTime();
+        allActivities.push({ nodeId: targetNodeId, activity: act, time });
+      });
+      
+      allActivities.sort((a, b) => a.time - b.time);
+      
+      // Count sequences where source succeeded, then target executed
+      let lastSourceSuccessTime = -1;
+      for (const item of allActivities) {
+        if (item.nodeId === sourceNodeId) {
+          if (item.activity.status?.toLowerCase() === 'success') {
+            lastSourceSuccessTime = item.time;
+          }
+        } else if (item.nodeId === targetNodeId) {
+          if (lastSourceSuccessTime >= 0 && item.time >= lastSourceSuccessTime) {
+            count++;
+            // Reset to avoid double counting
+            lastSourceSuccessTime = -1;
+          }
+        }
+      }
+      
+      // For special cases, use simpler heuristics
+      if (edgeType === 'if') {
+        // For conditional edges, count is already calculated above
+        return count;
+      } else if (targetKind === 'join') {
+        if (sourceKind === 'timer') {
+          // Timer → join: count join successes (simpler)
+          return targetActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+        } else {
+          // Other inputs into join: count source successes
+          return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+        }
+      } else if (sourceKind === 'timer') {
+        // Timer → non-join: count timer successes
+        return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+      } else if (targetIn > 1) {
+        // Merge into non-join: count source successes
+        return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+      }
+      
+      // For simple linear flows, return the sequence count
+      return count;
+    };
 
     setEdges((currentEdges) => {
       if (!currentEdges || currentEdges.length === 0) {
@@ -588,26 +675,55 @@ export default function WorkflowEditorPage() {
           }
         }
 
-        const shouldBeGreen = isUsed;
-        const isCurrentlyGreen = edge.style?.stroke === '#10b981';
+        // Count edge traversals
+        const traversalCount = countEdgeTraversals(
+          edge.source,
+          edge.target,
+          edgeType,
+          sourceKind || '',
+          targetKind || '',
+          targetIn
+        );
 
-        // Only update if state needs to change
-        if (shouldBeGreen && !isCurrentlyGreen) {
+        // Edge should be green if it was used in the latest execution OR if it has a historical count > 0
+        // This ensures edges that were traversed multiple times (like in loops) stay green even if the last execution didn't use them
+        const shouldBeGreen = isUsed || traversalCount > 0;
+        const isCurrentlyGreen = edge.style?.stroke === '#10b981';
+        const currentLabel = edge.label as string;
+        // Always show label in instance mode, even if count is 0
+        const newLabel = String(traversalCount);
+
+        // Check if we need to update
+        const needsStyleUpdate = shouldBeGreen !== isCurrentlyGreen;
+        const needsLabelUpdate = newLabel !== currentLabel;
+
+        if (needsStyleUpdate || needsLabelUpdate) {
           hasChanges = true;
-          console.log(
-            `[Edge Highlighting] Marking edge green: ${edge.source} -> ${edge.target} (sourceKind=${sourceKind}, targetKind=${targetKind})`
-          );
-          return {
+          const updatedEdge: any = {
             ...edge,
-            style: {
-              stroke: '#10b981', // green color
-              strokeWidth: 3,
+            label: newLabel,
+            labelStyle: {
+              fill: traversalCount > 0 ? '#10b981' : '#9ca3af', // green if used, gray if 0
+              fontWeight: 'bold',
+              fontSize: '12px',
+            },
+            labelBgStyle: {
+              fill: 'white',
+              fillOpacity: 0.8,
             },
           };
-        } else if (!shouldBeGreen && isCurrentlyGreen) {
-          hasChanges = true;
-          const { style, ...rest } = edge;
-          return rest;
+          
+          if (shouldBeGreen) {
+            updatedEdge.style = {
+              stroke: '#10b981', // green color
+              strokeWidth: 3,
+            };
+          } else if (!shouldBeGreen && isCurrentlyGreen) {
+            const { style, ...rest } = updatedEdge;
+            return rest;
+          }
+          
+          return updatedEdge;
         }
         return edge;
       });

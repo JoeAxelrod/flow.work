@@ -119,6 +119,15 @@ export function StationNode({ data, id }: StationNodeProps) {
     window.dispatchEvent(event);
   };
 
+  // Check if node is currently running (started but not finished)
+  const isRunning = instanceData && 
+    instanceData.startedAt && 
+    !instanceData.finishedAt &&
+    instanceData.status?.toLowerCase() !== 'success' &&
+    instanceData.status?.toLowerCase() !== 'completed' &&
+    instanceData.status?.toLowerCase() !== 'failed' &&
+    instanceData.status?.toLowerCase() !== 'error';
+
   // In instance mode, always use activity-based colors (gray/green/red), never purple
   // Outside instance mode, use purple for nodes without activity, gray/green/red for nodes with activity
   const borderColor = isInstanceMode
@@ -200,8 +209,8 @@ export function StationNode({ data, id }: StationNodeProps) {
         <span>{data.kind}</span>
       </div>
 
-      {/* execution count badge (only if ran more than once) */}
-      {executionCount > 1 && (
+      {/* execution count badge (always show in instance mode, including 0) */}
+      {isInstanceMode && (
         <div
           style={{
             position: 'absolute',
@@ -215,13 +224,69 @@ export function StationNode({ data, id }: StationNodeProps) {
             fontWeight: 'bold',
             lineHeight: 1,
             minWidth: '18px',
-            textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
           }}
-          title={`Executed ${executionCount} times`}
+          title={executionCount === 0 
+            ? 'Not executed' 
+            : `Executed ${executionCount} time${executionCount !== 1 ? 's' : ''}`}
         >
-          {executionCount}
+          <span>{executionCount}</span>
+          {isRunning && (
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              style={{ 
+                flexShrink: 0,
+                animation: 'spin 0.8s linear infinite',
+              }}
+            >
+              <circle 
+                cx="12" 
+                cy="12" 
+                r="10" 
+                strokeDasharray="47" 
+                strokeDashoffset="23.5"
+                opacity="0.8"
+              />
+            </svg>
+          )}
+          {!isRunning && executionCount > 0 && instanceData && (instanceData.status?.toLowerCase() === 'success' || instanceData.status?.toLowerCase() === 'completed') && (
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#10b981"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ flexShrink: 0 }}
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
         </div>
       )}
+      
+      {/* Add CSS animation for spinner */}
+      <style>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
 
       <div
         style={{
