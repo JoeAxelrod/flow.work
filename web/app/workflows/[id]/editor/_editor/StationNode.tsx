@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
-import { FlowNode, NodeKind } from './_editor/domain/types';
+import { FlowNode, NodeKind } from './domain/types';
 
 interface StationNodeProps extends NodeProps {
   data: FlowNode['data'];
@@ -314,7 +314,7 @@ export function StationNode({ data, id }: StationNodeProps) {
           marginTop: '16px',
         }}
       >
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, marginRight: '8px' }}>
           <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
             {data.label}
           </div>
@@ -327,7 +327,7 @@ export function StationNode({ data, id }: StationNodeProps) {
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', flexShrink: 0, marginLeft: '8px' }}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -358,8 +358,8 @@ export function StationNode({ data, id }: StationNodeProps) {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
               <circle cx="12" cy="12" r="3" />
-              <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
             </svg>
           </button>
           {instanceData && (
@@ -464,7 +464,7 @@ export function StationNode({ data, id }: StationNodeProps) {
                   strokeLinejoin="round"
                 >
                   <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 0-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   <line x1="10" y1="11" x2="10" y2="17" />
                   <line x1="14" y1="11" x2="14" y2="17" />
                 </svg>
@@ -476,3 +476,5 @@ export function StationNode({ data, id }: StationNodeProps) {
     </div>
   );
 }
+
+

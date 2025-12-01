@@ -1,0 +1,186 @@
+[1mdiff --git a/web/app/workflows/[id]/editor/EdgeModal.tsx b/web/app/workflows/[id]/editor/EdgeModal.tsx[m
+[1mindex cae8c7c..abca41f 100644[m
+[1m--- a/web/app/workflows/[id]/editor/EdgeModal.tsx[m
+[1m+++ b/web/app/workflows/[id]/editor/EdgeModal.tsx[m
+[36m@@ -1,8 +1,8 @@[m
+ 'use client';[m
+ [m
+ import { Edge } from 'reactflow';[m
+[31m-import { EdgeConfig, EdgeType } from './types';[m
+[31m-import { useWorkflowEditor } from './WorkflowEditorContext';[m
+[32m+[m[32mimport { EdgeConfig, EdgeType } from './_editor/domain/types';[m
+[32m+[m[32mimport { useWorkflowEditor } from './_editor/WorkflowEditorContext';[m
+ [m
+ interface EdgeModalProps {[m
+   edgeId?: string; // Optional - if provided, it's edit mode (for future add-edge support)[m
+[1mdiff --git a/web/app/workflows/[id]/editor/NodeModal.tsx b/web/app/workflows/[id]/editor/NodeModal.tsx[m
+[1mindex b5e3f69..f7b7888 100644[m
+[1m--- a/web/app/workflows/[id]/editor/NodeModal.tsx[m
+[1m+++ b/web/app/workflows/[id]/editor/NodeModal.tsx[m
+[36m@@ -1,7 +1,7 @@[m
+ 'use client';[m
+ [m
+ import { useState } from 'react';[m
+[31m-import { NodeConfig, NodeKind } from './types';[m
+[32m+[m[32mimport { NodeConfig, NodeKind } from './_editor/domain/types';[m
+ [m
+ interface NodeModalProps {[m
+   nodeId?: string; // Optional - if provided, it's edit mode[m
+[1mdiff --git a/web/app/workflows/[id]/editor/StationNode.tsx b/web/app/workflows/[id]/editor/StationNode.tsx[m
+[1mindex ee0d424..a8aaac3 100644[m
+[1m--- a/web/app/workflows/[id]/editor/StationNode.tsx[m
+[1m+++ b/web/app/workflows/[id]/editor/StationNode.tsx[m
+[36m@@ -2,7 +2,7 @@[m
+ [m
+ import { useEffect, useState } from 'react';[m
+ import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';[m
+[31m-import { FlowNode, NodeKind } from './types';[m
+[32m+[m[32mimport { FlowNode, NodeKind } from './_editor/domain/types';[m
+ [m
+ interface StationNodeProps extends NodeProps {[m
+   data: FlowNode['data'];[m
+[1mdiff --git a/web/app/workflows/[id]/editor/page.tsx b/web/app/workflows/[id]/editor/page.tsx[m
+[1mindex 7a663c9..5760356 100644[m
+[1m--- a/web/app/workflows/[id]/editor/page.tsx[m
+[1m+++ b/web/app/workflows/[id]/editor/page.tsx[m
+[36m@@ -2,217 +2,30 @@[m
+ [m
+ import { useState, useEffect, useCallback, useRef } from 'react';[m
+ import { useParams, useSearchParams } from 'next/navigation';[m
+[31m-import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';[m
+[31m-import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';[m
+ import { useToast } from '../../../components/ToastContext';[m
+ import { io, Socket } from 'socket.io-client';[m
+ [m
+[31m-import ReactFlow, {[m
+[31m-  addEdge,[m
+[31m-  Background,[m
+[31m-  useNodesState,[m
+[31m-  useEdgesState,[m
+[31m-  Connection,[m
+[31m-  Edge,[m
+[31m-  Node,[m
+[31m-  MarkerType,[m
+[31m-  ConnectionMode,            // ⬅️ add this[m
+[31m-  useReactFlow,[m
+[31m-} from 'reactflow';[m
+[32m+[m[32mimport { useNodesState, useEdgesState, Edge, Node } from 'reactflow';[m
+ [m
+ import 'reactflow/dist/style.css';[m
+[31m-import { getWorkflow, importWorkflow, getInstance, API } from '../../../api-client';[m
+[31m-import { NodeConfig, EdgeConfig, WorkflowData, FlowNode } from './types';[m
+[32m+[m[32mimport { getWorkflow, getInstance, API } from '../../../api-client';[m
+[32m+[m[32mimport { NodeConfig, EdgeConfig, WorkflowData } from './_editor/domain/types';[m
+ import {[m
+   nodesToFlowNodes,[m
+   edgesToFlowEdges,[m
+   generateNodeId,[m
+   calculateNewNodePosition,[m
+   createNodeFromConfig,[m
+[31m-  createWorkflowDefinition,[m
+   updateEdgeWithConfig,[m
+   updateNodeFromConfig,[m
+[31m-} from './helpers';[m
+[31m-import { NodeModal } from './NodeModal';[m
+[31m-import { EdgeModal } from './EdgeModal';[m
+[31m-import { StationNode } from './StationNode';[m
+[31m-import { WorkflowEditorProvider } from './WorkflowEditorContext';[m
+[31m-[m
+[31m-// Node and edge types outside component[m
+[31m-const nodeTypes = {[m
+[31m-  node: StationNode,[m
+[31m-};[m
+[31m-const edgeTypes = {};[m
+[31m-[m
+[31m-// Metadata Panel Overlay Component (must be inside ReactFlow context)[m
+[31m-function MetadataPanelOverlay({ nodeId, nodes, onClose }: { nodeId: string; nodes: Node[]; onClose: () => void }) {[m
+[31m-  const { getNode, project, getViewport } = useReactFlow();[m
+[31m-  const [position, setPosition] = useState({ x: 0, y: 0 });[m
+[31m-  const selectedNode = nodes.find(n => n.id === nodeId);[m
+[31m-  const metadata = selectedNode?.data?.instanceData;[m
+[31m-  [m
+[31m-  const updatePosition = useCallback(() => {[m
+[31m-    if (!selectedNode) return;[m
+[31m-    [m
+[31m-    const node = getNode(nodeId);[m
+[31m-    if (!node) return;[m
+[31m-    [m
+[31m-    // Try to get the actual DOM element[m
+[31m-    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`) as HTMLElement;[m
+[31m-    [m
+[31m-    if (nodeElement) {[m
+[31m-      // Get the ReactFlow container[m
+[31m-      const reactFlowContainer = nodeElement.closest('.react-flow') as HTMLElement;[m
+[31m-      if (reactFlowContainer) {[m
+[31m-        const containerRect = reactFlowContainer.getBoundingClientRect();[m
+[31m-        const nodeRect = nodeElement.getBoundingClientRect();[m
+[31m-        [m
+[31m-        // Calculate position relative to ReactFlow container[m
+[31m-        const x = nodeRect.right - containerRect.left + 20; // 20px spacing[m
+[31m-        const y = nodeRect.top - containerRect.top;[m
+[31m-        [m
+[31m-        setPosition({ x, y });[m
+[31m-        return;[m
+[31m-      }[m
+[31m-    }[m
+[31m-    [m
+[31m-    // Fallback: use project function[m
+[31m-    const nodeWidth = node.width || 180;[m
+[31m-    const spacing = 20;[m
+[31m-    const screenPosition = project({[m
+[31m-      x: node.position.x + nodeWidth + spacing,[m
+[31m-      y: node.position.y,[m
+[31m-    });[m
+[31m-    setPosition(screenPosition);[m
+[31m-  }, [nodeId, getNode, project, selectedNode]);[m
+[31m-  [m
+[31m-  useEffect(() => {[m
+[31m-    updatePosition();[m
+[31m-    [m
+[31m-    // Update position on viewport changes (pan, zoom)[m
+[31m-    const handleViewportChange = () => {[m
+[31m-      updatePosition();[m
+[31m-    };[m
+[31m-    [m
+[31m-    // Listen for ReactFlow viewport changes[m
+[31m-    window.addEventListener('resize', handleViewportChange);[m
+[31m-    const reactFlowContainer = document.querySelector('.react-flow');[m
+[31m-    if (reactFlowContainer) {[m
+[31m-      reactFlowContainer.addEventListener('wheel', handleViewportChange, { passive: true });[m
+[31m-    }[m
+[31m-    [m
+[31m-    // Use MutationObserver to detect when node position changes[m
+[31m-    const observer = new MutationObserver(updatePosition);[m
+[31m-    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);[m
+[31m-    if (nodeElement) {[m
+[31m-      observer.observe(nodeElement, { attributes: true, attributeFilter: ['style', 'transform'] });[m
+[31m-    }[m
+[31m-    [m
+[31m-    // Update position periodically to handle pan/zoom[m
+[31m-    const intervalId = setInterval(updatePosition, 100);[m
+[31m-    [m
+[31m-    return () => {[m
+[31m-      window.removeEventListener('resize', handleViewportChange);[m
+[31m-      if (reactFlowContainer) {[m
+[31m-        reactFlowContainer.removeEventListener('wheel', handleViewportChange);[m
+[31m-      }[m
+[31m-      observer.disconnect();[m
+[31m-      clearInterval(intervalId);[m
+[31m-    };[m
+[31m-  }, [nodeId, updatePosition]);[m
+[31m-  [m
+[31m-  if (!metadata || !selectedNode) return null;[m
+[31m-  [m
+[31m-  return ([m
+[31m-    <div[m
+[31m-      style={{[m
+[31m-        position: 'absolute',[m
+[31m-        left: `${position.x}px`,[m
+[31m-        top: `${position.y}px`,[m
+[31m-        width: '400px',[m
+[31m-        maxHeight: '80vh',[m
+[31m-        background: 'white',[m
+[31m-        border: '2px solid #4f46e5',[m
+[31m-        borderRadius: '8px',[m
+[31m-        padding: '16px',[m
+[31m-        boxShadow: '0 4px 12px

@@ -2,217 +2,30 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { Snackbar, Alert, Slide, SlideProps } from '@mui/material';
-import { CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 import { useToast } from '../../../components/ToastContext';
 import { io, Socket } from 'socket.io-client';
 
-import ReactFlow, {
-  addEdge,
-  Background,
-  useNodesState,
-  useEdgesState,
-  Connection,
-  Edge,
-  Node,
-  MarkerType,
-  ConnectionMode,            // ⬅️ add this
-  useReactFlow,
-} from 'reactflow';
+import { useNodesState, useEdgesState, Edge, Node } from 'reactflow';
 
 import 'reactflow/dist/style.css';
-import { getWorkflow, importWorkflow, getInstance, API } from '../../../api-client';
-import { NodeConfig, EdgeConfig, WorkflowData, FlowNode } from './types';
+import { getWorkflow, getInstance, API } from '../../../api-client';
+import { NodeConfig, EdgeConfig, WorkflowData } from './_editor/domain/types';
 import {
   nodesToFlowNodes,
   edgesToFlowEdges,
   generateNodeId,
   calculateNewNodePosition,
   createNodeFromConfig,
-  createWorkflowDefinition,
   updateEdgeWithConfig,
   updateNodeFromConfig,
-} from './helpers';
-import { NodeModal } from './NodeModal';
-import { EdgeModal } from './EdgeModal';
-import { StationNode } from './StationNode';
-import { WorkflowEditorProvider } from './WorkflowEditorContext';
-
-// Node and edge types outside component
-const nodeTypes = {
-  node: StationNode,
-};
-const edgeTypes = {};
-
-// Metadata Panel Overlay Component (must be inside ReactFlow context)
-function MetadataPanelOverlay({ nodeId, nodes, onClose }: { nodeId: string; nodes: Node[]; onClose: () => void }) {
-  const { getNode, project, getViewport } = useReactFlow();
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const selectedNode = nodes.find(n => n.id === nodeId);
-  const metadata = selectedNode?.data?.instanceData;
-  
-  const updatePosition = useCallback(() => {
-    if (!selectedNode) return;
-    
-    const node = getNode(nodeId);
-    if (!node) return;
-    
-    // Try to get the actual DOM element
-    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`) as HTMLElement;
-    
-    if (nodeElement) {
-      // Get the ReactFlow container
-      const reactFlowContainer = nodeElement.closest('.react-flow') as HTMLElement;
-      if (reactFlowContainer) {
-        const containerRect = reactFlowContainer.getBoundingClientRect();
-        const nodeRect = nodeElement.getBoundingClientRect();
-        
-        // Calculate position relative to ReactFlow container
-        const x = nodeRect.right - containerRect.left + 20; // 20px spacing
-        const y = nodeRect.top - containerRect.top;
-        
-        setPosition({ x, y });
-        return;
-      }
-    }
-    
-    // Fallback: use project function
-    const nodeWidth = node.width || 180;
-    const spacing = 20;
-    const screenPosition = project({
-      x: node.position.x + nodeWidth + spacing,
-      y: node.position.y,
-    });
-    setPosition(screenPosition);
-  }, [nodeId, getNode, project, selectedNode]);
-  
-  useEffect(() => {
-    updatePosition();
-    
-    // Update position on viewport changes (pan, zoom)
-    const handleViewportChange = () => {
-      updatePosition();
-    };
-    
-    // Listen for ReactFlow viewport changes
-    window.addEventListener('resize', handleViewportChange);
-    const reactFlowContainer = document.querySelector('.react-flow');
-    if (reactFlowContainer) {
-      reactFlowContainer.addEventListener('wheel', handleViewportChange, { passive: true });
-    }
-    
-    // Use MutationObserver to detect when node position changes
-    const observer = new MutationObserver(updatePosition);
-    const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
-    if (nodeElement) {
-      observer.observe(nodeElement, { attributes: true, attributeFilter: ['style', 'transform'] });
-    }
-    
-    // Update position periodically to handle pan/zoom
-    const intervalId = setInterval(updatePosition, 100);
-    
-    return () => {
-      window.removeEventListener('resize', handleViewportChange);
-      if (reactFlowContainer) {
-        reactFlowContainer.removeEventListener('wheel', handleViewportChange);
-      }
-      observer.disconnect();
-      clearInterval(intervalId);
-    };
-  }, [nodeId, updatePosition]);
-  
-  if (!metadata || !selectedNode) return null;
-  
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        width: '400px',
-        maxHeight: '80vh',
-        background: 'white',
-        border: '2px solid #4f46e5',
-        borderRadius: '8px',
-        padding: '16px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        zIndex: 1000,
-        overflow: 'auto',
-        pointerEvents: 'auto',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-          {selectedNode?.data?.label || 'Node Metadata'}
-        </h3>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            fontSize: '20px',
-            cursor: 'pointer',
-            padding: '0',
-            width: '24px',
-            height: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          ×
-        </button>
-      </div>
-      <div style={{ fontSize: '12px', marginBottom: '12px' }}>
-        <strong>Status:</strong>{' '}
-        <span style={{ 
-          color: metadata.status === 'success' ? '#10b981' : 
-                 metadata.status === 'failed' ? '#ef4444' : '#6b7280' 
-        }}>
-          {metadata.status}
-        </span>
-      </div>
-      {metadata.input && (
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Input:</div>
-          <pre style={{ 
-            background: '#f3f4f6', 
-            padding: '8px', 
-            borderRadius: '4px', 
-            fontSize: '11px', 
-            overflow: 'auto', 
-            maxHeight: '200px',
-            margin: 0,
-          }}>
-            {JSON.stringify(metadata.input, null, 2)}
-          </pre>
-        </div>
-      )}
-      {metadata.output && (
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Output:</div>
-          <pre style={{ 
-            background: '#f3f4f6', 
-            padding: '8px', 
-            borderRadius: '4px', 
-            fontSize: '11px', 
-            overflow: 'auto', 
-            maxHeight: '200px',
-            margin: 0,
-          }}>
-            {JSON.stringify(metadata.output, null, 2)}
-          </pre>
-        </div>
-      )}
-      {metadata.error && (
-        <div style={{ marginTop: '12px', color: '#ef4444' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Error:</div>
-          <div style={{ fontSize: '12px' }}>{metadata.error}</div>
-        </div>
-      )}
-    </div>
-  );
-}
+} from './_editor/domain/helpers';
+import { WorkflowEditorProvider } from './_editor/WorkflowEditorContext';
+import { FlowCanvas } from './_editor/components/FlowCanvas';
+import { EditorModals } from './_editor/components/EditorModals';
+import { useNodeEvents } from './_editor/hooks/useNodeEvents';
+import { useEditorHistory } from './_editor/hooks/useEditorHistory';
+import { useAutosaveWorkflow } from './_editor/hooks/useAutosaveWorkflow';
+import { useConnectEdge } from './_editor/hooks/useConnectEdge';
 
 export default function WorkflowEditorPage() {
   const params = useParams();
@@ -247,35 +60,55 @@ export default function WorkflowEditorPage() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  
-  // Track the node where connection started to fix source/target swap issue
-  const connectionStartNodeId = useRef<string | null>(null);
-  
-  // Auto-save: debounce timer and saving state
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showSaveToast, setShowSaveToast] = useState(false);
+
+  // Refs for hooks
   const isInitialLoadRef = useRef(true);
   const isServerSyncRef = useRef(false);
-  const debouncedSaveRef = useRef<(() => void) | null>(null);
-  
-  // Undo/Redo history
-  const historyRef = useRef<Array<{ nodes: Node[]; edges: Edge[] }>>([]);
-  const historyIndexRef = useRef(-1);
-  const isUndoRedoRef = useRef(false);
-  const historyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-  const MAX_HISTORY = 50;
-  
+
   // Metadata panel state
   const [selectedNodeForMetadata, setSelectedNodeForMetadata] = useState<string | null>(null);
 
   // Socket connection for real-time updates
   const socketRef = useRef<Socket | null>(null);
-  
+
   // Track last processed instance data to prevent infinite loops
   const lastProcessedInstanceDataRef = useRef<string | null>(null);
+
+  // Use hooks
+  const { canUndo, canRedo, undo, redo } = useEditorHistory({
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    workflowData,
+    isInitialLoadRef,
+    isServerSyncRef,
+  });
+
+  const { isSaving, debouncedSaveRef } = useAutosaveWorkflow({
+    workflowData,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    isInstanceMode,
+    isInitialLoadRef,
+    isServerSyncRef,
+  });
+
+  const { onConnect, onConnectStart, onConnectEnd } = useConnectEdge({
+    nodes,
+    setEdges,
+    toast,
+  });
+
+  useNodeEvents({
+    nodes,
+    setNodes,
+    setEdges,
+    setEditingNode,
+    setNodeConfig,
+  });
 
   // Fetch workflow
   const fetchWorkflow = useCallback(async () => {
@@ -284,7 +117,7 @@ export default function WorkflowEditorPage() {
       setError(null);
       const data = await getWorkflow(workflowId);
       setWorkflowData(data);
-      console.log(data)
+      console.log(data);
 
       const flowNodes = nodesToFlowNodes(data.nodes || data.stations || []).map((node) => {
         // Preserve all existing node data and add isInstanceMode
@@ -311,7 +144,7 @@ export default function WorkflowEditorPage() {
   // Fetch instance data if in instance mode
   const fetchInstance = useCallback(async () => {
     if (!isInstanceMode || !instanceId) return;
-    
+
     try {
       const instance = await getInstance(instanceId);
       setInstanceData(instance);
@@ -365,7 +198,7 @@ export default function WorkflowEditorPage() {
     // Listen for activity updates
     socket.on('activity-update', (activityData: any) => {
       console.log('Activity update received:', activityData);
-      
+
       // Update instance data with new activity
       setInstanceData((prev: any) => {
         // If no previous data, create initial structure
@@ -379,23 +212,25 @@ export default function WorkflowEditorPage() {
             error: null,
             startedAt: activityData.startedAt,
             finishedAt: null,
-            nodes: [{
-              id: activityData.id,
-              nodeId: activityData.nodeId,
-              nodeName: activityData.nodeName,
-              nodeKind: activityData.nodeKind,
-              status: activityData.status,
-              input: activityData.input,
-              output: activityData.output,
-              error: activityData.error,
-              startedAt: activityData.startedAt,
-              finishedAt: activityData.finishedAt,
-              createdAt: activityData.startedAt,
-              updatedAt: activityData.finishedAt || activityData.startedAt,
-            }],
+            nodes: [
+              {
+                id: activityData.id,
+                nodeId: activityData.nodeId,
+                nodeName: activityData.nodeName,
+                nodeKind: activityData.nodeKind,
+                status: activityData.status,
+                input: activityData.input,
+                output: activityData.output,
+                error: activityData.error,
+                startedAt: activityData.startedAt,
+                finishedAt: activityData.finishedAt,
+                createdAt: activityData.startedAt,
+                updatedAt: activityData.finishedAt || activityData.startedAt,
+              },
+            ],
           };
         }
-        
+
         const nodes = [...(prev.nodes || [])];
         const normalized = {
           id: activityData.id,
@@ -492,7 +327,7 @@ export default function WorkflowEditorPage() {
     if (!isInstanceMode || !instanceData || !edges || edges.length === 0 || nodes.length === 0) {
       return;
     }
-    
+
     // Create a signature of the instance data to detect actual changes
     const instanceDataSignature = JSON.stringify(
       instanceData.nodes?.map((n: any) => ({
@@ -502,14 +337,14 @@ export default function WorkflowEditorPage() {
         finishedAt: n.finishedAt,
       })) || []
     );
-    
+
     // Skip if we've already processed this exact instance data
     if (lastProcessedInstanceDataRef.current === instanceDataSignature) {
       return;
     }
-    
+
     lastProcessedInstanceDataRef.current = instanceDataSignature;
-    
+
     // Group all activities by nodeId for traversal counting
     const activitiesByNode = new Map<string, any[]>();
     instanceData.nodes?.forEach((n: any) => {
@@ -519,7 +354,7 @@ export default function WorkflowEditorPage() {
       }
       activitiesByNode.get(nodeId)!.push(n);
     });
-    
+
     // Sort activities by time for each node
     activitiesByNode.forEach((activities, nodeId) => {
       activities.sort((a, b) => {
@@ -528,7 +363,7 @@ export default function WorkflowEditorPage() {
         return aTime - bTime;
       });
     });
-    
+
     // Create a map of nodeId -> latest instance activity for quick lookup
     const nodeInstanceMap = new Map<string, any>();
     instanceData.nodes?.forEach((n: any) => {
@@ -553,33 +388,40 @@ export default function WorkflowEditorPage() {
     });
 
     // Function to count edge traversals
-    const countEdgeTraversals = (sourceNodeId: string, targetNodeId: string, edgeType: string, sourceKind: string, targetKind: string, targetIn: number): number => {
+    const countEdgeTraversals = (
+      sourceNodeId: string,
+      targetNodeId: string,
+      edgeType: string,
+      sourceKind: string,
+      targetKind: string,
+      targetIn: number
+    ): number => {
       const sourceActivities = activitiesByNode.get(sourceNodeId) || [];
       const targetActivities = activitiesByNode.get(targetNodeId) || [];
-      
+
       if (sourceActivities.length === 0 || targetActivities.length === 0) {
         return 0;
       }
-      
+
       // For most cases, count how many times target executed after source succeeded
       // This is a simplified heuristic that works for most workflow patterns
       let count = 0;
-      
+
       // Sort all activities chronologically to find sequences
       const allActivities: Array<{ nodeId: string; activity: any; time: number }> = [];
-      
-      sourceActivities.forEach(act => {
+
+      sourceActivities.forEach((act) => {
         const time = new Date(act.updatedAt || act.finishedAt || act.startedAt || act.createdAt || 0).getTime();
         allActivities.push({ nodeId: sourceNodeId, activity: act, time });
       });
-      
-      targetActivities.forEach(act => {
+
+      targetActivities.forEach((act) => {
         const time = new Date(act.updatedAt || act.finishedAt || act.startedAt || act.createdAt || 0).getTime();
         allActivities.push({ nodeId: targetNodeId, activity: act, time });
       });
-      
+
       allActivities.sort((a, b) => a.time - b.time);
-      
+
       // Count sequences where source succeeded, then target executed
       let lastSourceSuccessTime = -1;
       for (const item of allActivities) {
@@ -595,7 +437,7 @@ export default function WorkflowEditorPage() {
           }
         }
       }
-      
+
       // For special cases, use simpler heuristics
       if (edgeType === 'if') {
         // For conditional edges, count is already calculated above
@@ -603,19 +445,19 @@ export default function WorkflowEditorPage() {
       } else if (targetKind === 'join') {
         if (sourceKind === 'timer') {
           // Timer → join: count join successes (simpler)
-          return targetActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+          return targetActivities.filter((a) => a.status?.toLowerCase() === 'success').length;
         } else {
           // Other inputs into join: count source successes
-          return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+          return sourceActivities.filter((a) => a.status?.toLowerCase() === 'success').length;
         }
       } else if (sourceKind === 'timer') {
         // Timer → non-join: count timer successes
-        return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+        return sourceActivities.filter((a) => a.status?.toLowerCase() === 'success').length;
       } else if (targetIn > 1) {
         // Merge into non-join: count source successes
-        return sourceActivities.filter(a => a.status?.toLowerCase() === 'success').length;
+        return sourceActivities.filter((a) => a.status?.toLowerCase() === 'success').length;
       }
-      
+
       // For simple linear flows, return the sequence count
       return count;
     };
@@ -630,7 +472,7 @@ export default function WorkflowEditorPage() {
       currentEdges.forEach((e) => {
         indegree.set(e.target, (indegree.get(e.target) || 0) + 1);
       });
-      
+
       let hasChanges = false;
       const updatedEdges = currentEdges.map((edge) => {
         const sourceInstance = nodeInstanceMap.get(edge.source);
@@ -653,9 +495,7 @@ export default function WorkflowEditorPage() {
           if (targetKind === 'join') {
             if (sourceKind === 'timer') {
               // Timer → join: only green after join finished
-              isUsed = 
-                sourceInstance?.status === 'success' && 
-                targetInstance?.status === 'success';
+              isUsed = sourceInstance?.status === 'success' && targetInstance?.status === 'success';
             } else {
               // Other inputs into join: green as soon as source succeeded
               isUsed = sourceInstance?.status === 'success';
@@ -712,7 +552,7 @@ export default function WorkflowEditorPage() {
               fillOpacity: 0.8,
             },
           };
-          
+
           if (shouldBeGreen) {
             updatedEdge.style = {
               stroke: '#10b981', // green color
@@ -722,7 +562,7 @@ export default function WorkflowEditorPage() {
             const { style, ...rest } = updatedEdge;
             return rest;
           }
-          
+
           return updatedEdge;
         }
         return edge;
@@ -734,11 +574,14 @@ export default function WorkflowEditorPage() {
   }, [instanceData, isInstanceMode, nodes, setEdges]);
 
   // Handle node click for metadata
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    if (isInstanceMode && node.data?.instanceData) {
-      setSelectedNodeForMetadata(selectedNodeForMetadata === node.id ? null : node.id);
-    }
-  }, [isInstanceMode, selectedNodeForMetadata]);
+  const onNodeClick = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      if (isInstanceMode && node.data?.instanceData) {
+        setSelectedNodeForMetadata(selectedNodeForMetadata === node.id ? null : node.id);
+      }
+    },
+    [isInstanceMode, selectedNodeForMetadata]
+  );
 
   // Listen for metadata toggle events from nodes
   useEffect(() => {
@@ -754,277 +597,6 @@ export default function WorkflowEditorPage() {
       window.removeEventListener('toggleMetadata', handleToggleMetadata as EventListener);
     };
   }, [selectedNodeForMetadata]);
-
-    // Update undo/redo button states
-    const updateUndoRedoState = useCallback(() => {
-      setCanUndo(historyIndexRef.current > 0);
-      setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-    }, []);
-
-  // Mark initial load as complete after first render
-  useEffect(() => {
-    if (workflowData && nodes.length > 0) {
-      // Small delay to ensure all state is set
-      setTimeout(() => {
-        isInitialLoadRef.current = false;
-        // Initialize history with initial state
-        historyRef.current = [{ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }];
-        historyIndexRef.current = 0;
-        updateUndoRedoState();
-      }, 100);
-    }
-  }, [workflowData, nodes.length, edges.length, updateUndoRedoState]);
-  
-  // Save state to history (debounced to avoid too many entries)
-  const saveToHistory = useCallback(() => {
-    if (isInitialLoadRef.current || isUndoRedoRef.current || isServerSyncRef.current) {
-      return;
-    }
-    
-    const currentState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
-    };
-    
-    // Remove any history after current index (when user makes new change after undo)
-    if (historyIndexRef.current < historyRef.current.length - 1) {
-      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-    }
-    
-    // Add new state to history
-    historyRef.current.push(currentState);
-    
-    // Limit history size
-    if (historyRef.current.length > MAX_HISTORY) {
-      historyRef.current.shift(); // [1, 2, 3] -> [2, 3]
-    }
-    historyIndexRef.current++;
-    updateUndoRedoState();
-  }, [nodes, edges, updateUndoRedoState]);
-  
-  // Debounced history save
-  const debouncedSaveToHistory = useCallback(() => {
-    if (historyTimeoutRef.current) {
-      clearTimeout(historyTimeoutRef.current);
-    }
-    historyTimeoutRef.current = setTimeout(() => {
-      saveToHistory();
-    }, 300);
-  }, [saveToHistory]);
-  
-  // Undo function
-  const handleUndo = useCallback(() => {
-    if (historyIndexRef.current > 0) {
-      isUndoRedoRef.current = true;
-      historyIndexRef.current--;
-      const previousState = historyRef.current[historyIndexRef.current];
-      setNodes(previousState.nodes);
-      setEdges(previousState.edges);
-      updateUndoRedoState();
-      setTimeout(() => {
-        isUndoRedoRef.current = false;
-      }, 100);
-    }
-  }, [setNodes, setEdges, updateUndoRedoState]);
-  
-  // Redo function
-  const handleRedo = useCallback(() => {
-    if (historyIndexRef.current < historyRef.current.length - 1) {
-      isUndoRedoRef.current = true;
-      historyIndexRef.current++;
-      const nextState = historyRef.current[historyIndexRef.current];
-      setNodes(nextState.nodes);
-      setEdges(nextState.edges);
-      updateUndoRedoState();
-      setTimeout(() => {
-        isUndoRedoRef.current = false;
-      }, 100);
-    }
-  }, [setNodes, setEdges, updateUndoRedoState]);
-  
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Ctrl+Z (undo) or Ctrl+Y (redo) or Ctrl+Shift+Z (redo)
-      if (event.ctrlKey || event.metaKey) {
-        if (event.key === 'z' && !event.shiftKey) {
-          event.preventDefault();
-          handleUndo();
-        } else if (event.key === 'y' || (event.key === 'z' && event.shiftKey)) {
-          event.preventDefault();
-          handleRedo();
-        }
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleUndo, handleRedo]);
-  
-  // Save to history when nodes or edges change
-  useEffect(() => {
-    if (!workflowData || isInitialLoadRef.current) {
-      return;
-    }
-    
-    if (isUndoRedoRef.current || isServerSyncRef.current) {
-      return;
-    }
-    
-    debouncedSaveToHistory();
-    
-    return () => {
-      if (historyTimeoutRef.current) {
-        clearTimeout(historyTimeoutRef.current);
-      }
-    };
-  }, [nodes, edges, debouncedSaveToHistory, workflowData]);
-
-  // Listen for edit, copy, and delete node events from custom node component
-  useEffect(() => {
-    const handleEditNode = (event: CustomEvent) => {
-      const nodeId = event.detail.nodeId;
-      const node = nodes.find((n) => n.id === nodeId);
-      if (node) {
-        setEditingNode(nodeId);
-        setNodeConfig({
-          name: node.data.label || '',
-          kind: node.data.kind,
-          data: node.data.data || {},
-        });
-      }
-    };
-
-    const handleCopyNode = (event: CustomEvent) => {
-      const nodeId = event.detail.nodeId;
-      const nodeToCopy = nodes.find((n) => n.id === nodeId);
-      if (nodeToCopy) {
-        // Generate new ID for the copied node
-        const newId = generateNodeId(nodes);
-        // Calculate new position (offset by 50px to the right and down)
-        const newPosition = {
-          x: (nodeToCopy.position?.x || 0) + 50,
-          y: (nodeToCopy.position?.y || 0) + 50,
-        };
-        // Create copied node with same data but new ID and position
-        const copiedNode: FlowNode = {
-          ...nodeToCopy,
-          id: newId,
-          position: newPosition,
-        };
-        // Add the copied node
-        setNodes((nds) => [...nds, copiedNode]);
-      }
-    };
-
-    const handleDeleteNode = (event: CustomEvent) => {
-      const nodeId = event.detail.nodeId;
-      // Delete the node
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-      // Delete all edges connected to this node
-      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
-    };
-
-    window.addEventListener('editNode' as any, handleEditNode);
-    window.addEventListener('copyNode' as any, handleCopyNode);
-    window.addEventListener('deleteNode' as any, handleDeleteNode);
-    return () => {
-      window.removeEventListener('editNode' as any, handleEditNode);
-      window.removeEventListener('copyNode' as any, handleCopyNode);
-      window.removeEventListener('deleteNode' as any, handleDeleteNode);
-    };
-  }, [nodes, setNodes, setEdges]);
-
-  // Handle node connection
-  const onConnect = useCallback(
-    (params: Connection) => {
-      console.log('[StationNode] ReactFlow onConnect Event:', params);
-      console.log('[StationNode] Connection start node ID:', connectionStartNodeId.current);
-      
-      if (!params.source || !params.target) {
-        connectionStartNodeId.current = null;
-        return;
-      }
-      
-      // Fix source/target swap: if connection started from a node, that node should be the source
-      let correctedParams = { ...params };
-      if (connectionStartNodeId.current) {
-        // If ReactFlow swapped source/target, correct it
-        // The node where connection started should always be the source
-        if (connectionStartNodeId.current === params.target) {
-          // Connection started from what ReactFlow thinks is the target, so swap them
-          correctedParams = {
-            ...params,
-            source: params.target,
-            target: params.source,
-            sourceHandle: params.targetHandle,
-            targetHandle: params.sourceHandle,
-          };
-          console.log('[StationNode] Swapped source/target. Corrected params:', correctedParams);
-        } else if (connectionStartNodeId.current === params.source) {
-          // Connection started from source - this is correct, no swap needed
-          console.log('[StationNode] Source/target already correct');
-        } else {
-          // Edge case: connection start node doesn't match either source or target
-          console.warn('[StationNode] Connection start node does not match source or target!', {
-            startNode: connectionStartNodeId.current,
-            source: params.source,
-            target: params.target,
-          });
-        }
-        // Reset the tracking
-        connectionStartNodeId.current = null;
-      }
-      
-      // Prevent connections to/from hook nodes
-      const sourceNode = nodes.find((n) => n.id === correctedParams.source);
-      const targetNode = nodes.find((n) => n.id === correctedParams.target);
-
-      console.log(1)
-      
-      if (sourceNode?.data.kind === 'hook' || targetNode?.data.kind === 'hook') {
-        toast.showToast('Hook nodes cannot have edges connected to them', 'warning');
-        return;
-      }
-      
-      console.log('[StationNode] Final corrected params for edge creation:', correctedParams);
-      
-      setEdges((eds) => {
-        const newEdge = addEdge(
-          {
-            ...correctedParams,
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
-          },
-          eds
-        );
-        if (newEdge.length > 0) {
-          const lastEdge = newEdge[newEdge.length - 1];
-          lastEdge.data = { type: 'normal' };
-        }
-        // Auto-save will be triggered by the edges change effect
-        return newEdge;
-      });
-    },
-    [nodes, setEdges]
-  );
-
-  // Handle connection start
-  const onConnectStart = useCallback((event: React.MouseEvent | React.TouchEvent, params: { nodeId: string | null; handleId: string | null; handleType: string | null }) => {
-    console.log('[StationNode] ReactFlow onConnectStart Event:', { event, params });
-    // Track which node the connection started from
-    connectionStartNodeId.current = params.nodeId || null;
-  }, []);
-
-  // Handle connection end
-  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
-    console.log('[StationNode] ReactFlow onConnectEnd Event:', event);
-    // Reset connection start tracking if connection was cancelled
-    connectionStartNodeId.current = null;
-  }, []);
 
   // Handle edge click to edit
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
@@ -1071,7 +643,7 @@ export default function WorkflowEditorPage() {
   }, []);
 
   // Handle edge update
-  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: Connection) => {
+  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: any) => {
     console.log('[StationNode] ReactFlow onEdgeUpdate Event:', { oldEdge, newConnection });
   }, []);
 
@@ -1084,7 +656,6 @@ export default function WorkflowEditorPage() {
   const onEdgeUpdateEnd = useCallback((event: MouseEvent | TouchEvent | null, edge: Edge) => {
     // Edge update end handler
   }, []);
-
 
   // Add new node
   const handleAddNode = useCallback(() => {
@@ -1102,9 +673,7 @@ export default function WorkflowEditorPage() {
   const handleSaveEdge = useCallback(() => {
     if (!editingEdge) return;
 
-    setEdges((eds) =>
-      eds.map((e) => (e.id === editingEdge.id ? updateEdgeWithConfig(e, edgeConfig) : e))
-    );
+    setEdges((eds) => eds.map((e) => (e.id === editingEdge.id ? updateEdgeWithConfig(e, edgeConfig) : e)));
 
     setEditingEdge(null);
     setEdgeConfig({ type: 'normal', condition: '' });
@@ -1114,7 +683,7 @@ export default function WorkflowEditorPage() {
         debouncedSaveRef.current();
       }
     }, 0);
-  }, [editingEdge, edgeConfig, setEdges]);
+  }, [editingEdge, edgeConfig, setEdges, debouncedSaveRef]);
 
   // Delete edge
   const handleDeleteEdge = useCallback(() => {
@@ -1129,9 +698,7 @@ export default function WorkflowEditorPage() {
   const handleSaveNode = useCallback(() => {
     if (!editingNode) return;
 
-    setNodes((nds) =>
-      nds.map((n) => (n.id === editingNode ? updateNodeFromConfig(n, nodeConfig) : n))
-    );
+    setNodes((nds) => nds.map((n) => (n.id === editingNode ? updateNodeFromConfig(n, nodeConfig) : n)));
 
     setEditingNode(null);
     setNodeConfig({ name: '', kind: 'http', data: {} });
@@ -1141,115 +708,7 @@ export default function WorkflowEditorPage() {
         debouncedSaveRef.current();
       }
     }, 0);
-  }, [editingNode, nodeConfig, setNodes]);
-
-  // Auto-save workflow (debounced)
-  const autoSave = useCallback(async () => {
-    if (isInitialLoadRef.current || !workflowData || isInstanceMode) return;
-  
-    const saveStartTime = Date.now();
-    setIsSaving(true);
-    try {
-      const def = createWorkflowDefinition(
-        workflowData.workflow.id,
-        workflowData.workflow.name,
-        nodes,
-        edges
-      );
-      const result = await importWorkflow(def);
-  
-      if (result.nodeIdMap || result.stationIdMap) {
-        const idMap = (result.nodeIdMap || result.stationIdMap) as Record<string, string>;
-  
-        // mark that the next nodes/edges change is from the server
-        isServerSyncRef.current = true;
-  
-        setNodes((nds) => {
-          let changed = false;
-          const updated = nds.map((node) => {
-            const newId = idMap[node.id];
-            if (newId && newId !== node.id) {
-              changed = true;
-              return { ...node, id: newId };
-            }
-            return node;
-          });
-          return changed ? updated : nds;
-        });
-  
-        setEdges((eds) => {
-          let changed = false;
-          const updated = eds.map((edge) => {
-            const newSource = idMap[edge.source] || edge.source;
-            const newTarget = idMap[edge.target] || edge.target;
-            if (newSource !== edge.source || newTarget !== edge.target) {
-              changed = true;
-              return { ...edge, source: newSource, target: newTarget };
-            }
-            return edge;
-          });
-          return changed ? updated : eds;
-        });
-      }
-  
-      setShowSaveToast(true);
-    } catch (err: any) {
-      console.error('Auto-save failed:', err);
-    } finally {
-      // Ensure minimum 600ms display time for "Saving..." message
-      const elapsedTime = Date.now() - saveStartTime;
-      const remainingTime = Math.max(0, 600 - elapsedTime);
-      
-      if (remainingTime > 0) {
-        setTimeout(() => {
-          setIsSaving(false);
-        }, remainingTime);
-      } else {
-        setIsSaving(false);
-      }
-    }
-  }, [workflowData, nodes, edges, setNodes, setEdges, isInstanceMode]);
-  
-
-  // Debounced save function
-  const debouncedSave = useCallback(() => {
-    // Clear existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    // Set new timeout (500ms debounce)
-    saveTimeoutRef.current = setTimeout(() => {
-      autoSave();
-    }, 500);
-  }, [autoSave]);
-  
-  // Store debouncedSave in ref so it can be called from handlers defined earlier
-  useEffect(() => {
-    debouncedSaveRef.current = debouncedSave;
-  }, [debouncedSave]);
-
-  // Auto-save when nodes or edges change
-  useEffect(() => {
-    if (!workflowData || isInitialLoadRef.current || isInstanceMode) {
-      return;
-    }
-  
-    // If this change came from server mapping, don't auto-save again
-    if (isServerSyncRef.current) {
-      isServerSyncRef.current = false;
-      return;
-    }
-  
-    debouncedSave();
-  
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [nodes, edges, debouncedSave, workflowData, isInstanceMode]);
-  
+  }, [editingNode, nodeConfig, setNodes, debouncedSaveRef]);
 
   // Loading state
   if (loading) {
@@ -1312,7 +771,7 @@ export default function WorkflowEditorPage() {
             {!isInstanceMode && (
               <>
                 <button
-                  onClick={handleUndo}
+                  onClick={undo}
                   disabled={!canUndo}
                   style={{
                     padding: '8px 16px',
@@ -1328,7 +787,7 @@ export default function WorkflowEditorPage() {
                   Undo
                 </button>
                 <button
-                  onClick={handleRedo}
+                  onClick={redo}
                   disabled={!canRedo}
                   style={{
                     padding: '8px 16px',
@@ -1363,131 +822,59 @@ export default function WorkflowEditorPage() {
           </div>
         </div>
 
-
         {/* ReactFlow Canvas */}
-        <div style={{ flex: 1 }}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={isInstanceMode ? undefined : onConnect}
-            onConnectStart={isInstanceMode ? undefined : onConnectStart}
-            onConnectEnd={isInstanceMode ? undefined : onConnectEnd}
-            onNodeClick={onNodeClick}
-            onEdgeClick={onEdgeClick}
-            onEdgeDoubleClick={onEdgeDoubleClick}
-            onEdgeMouseEnter={onEdgeMouseEnter}
-            onEdgeMouseMove={onEdgeMouseMove}
-            onEdgeMouseLeave={onEdgeMouseLeave}
-            onEdgeContextMenu={onEdgeContextMenu}
-            onEdgeUpdate={isInstanceMode ? undefined : onEdgeUpdate}
-            onEdgeUpdateStart={isInstanceMode ? undefined : onEdgeUpdateStart}
-            onEdgeUpdateEnd={isInstanceMode ? undefined : onEdgeUpdateEnd}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            connectionMode={ConnectionMode.Loose}
-            nodesConnectable={!isInstanceMode}
-            elementsSelectable={!isInstanceMode}
-            nodesDraggable={!isInstanceMode}
-            edgesUpdatable={!isInstanceMode}
-            fitView
-          >
-            <Background />
-            {isInstanceMode && selectedNodeForMetadata && (
-              <MetadataPanelOverlay
-                nodeId={selectedNodeForMetadata}
-                nodes={nodes}
-                onClose={() => setSelectedNodeForMetadata(null)}
-              />
-            )}
-          </ReactFlow>
-        </div>
+        <FlowCanvas
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onEdgeDoubleClick={onEdgeDoubleClick}
+          onEdgeMouseEnter={onEdgeMouseEnter}
+          onEdgeMouseMove={onEdgeMouseMove}
+          onEdgeMouseLeave={onEdgeMouseLeave}
+          onEdgeContextMenu={onEdgeContextMenu}
+          onEdgeUpdate={onEdgeUpdate}
+          onEdgeUpdateStart={onEdgeUpdateStart}
+          onEdgeUpdateEnd={onEdgeUpdateEnd}
+          isInstanceMode={isInstanceMode}
+          selectedNodeForMetadata={selectedNodeForMetadata}
+          onCloseMetadata={() => setSelectedNodeForMetadata(null)}
+        />
 
         {/* Modals */}
-        {showAddNodeModal && (
-          <NodeModal
-            config={newNodeConfig}
-            onConfigChange={setNewNodeConfig}
-            onSave={handleAddNode}
-            onCancel={() => {
-              setShowAddNodeModal(false);
-              setNewNodeConfig({ name: '', kind: 'http', data: {} });
-            }}
-          />
-        )}
-
-        {editingEdge && (
-          <EdgeModal
-            edge={editingEdge}
-            config={edgeConfig}
-            onConfigChange={setEdgeConfig}
-            onSave={handleSaveEdge}
-            onDelete={handleDeleteEdge}
-            onCancel={() => {
-              setEditingEdge(null);
-              setEdgeConfig({ type: 'normal', condition: '' });
-            }}
-            isReadOnly={isInstanceMode}
-          />
-        )}
-
-        {editingNode && (
-          <NodeModal
-            nodeId={editingNode}
-            config={nodeConfig}
-            onConfigChange={setNodeConfig}
-            onSave={handleSaveNode}
-            onCancel={() => {
-              setEditingNode(null);
-              setNodeConfig({ name: '', kind: 'http', data: {} });
-            }}
-            isReadOnly={isInstanceMode}
-          />
-        )}
-
-        {/* Save Toast Notification */}
-        {/* <Snackbar
-          open={showSaveToast}
-          autoHideDuration={1500}
-          onClose={() => setShowSaveToast(false)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          TransitionComponent={Slide}
-          TransitionProps={{ direction: 'up' } as SlideProps}
-          sx={{
-            '& .MuiSnackbar-root': {
-              bottom: 16,
-            },
+        <EditorModals
+          showAddNodeModal={showAddNodeModal}
+          newNodeConfig={newNodeConfig}
+          onNewNodeConfigChange={setNewNodeConfig}
+          onAddNode={handleAddNode}
+          onCancelAddNode={() => {
+            setShowAddNodeModal(false);
+            setNewNodeConfig({ name: '', kind: 'http', data: {} });
           }}
-        >
-          <Alert
-            onClose={() => setShowSaveToast(false)}
-            severity="success"
-            icon={<CheckCircleIcon sx={{ fontSize: '16px' }} />}
-            sx={{
-              backgroundColor: 'rgba(16, 185, 129, 0.95)',
-              color: 'white',
-              padding: '6px 12px',
-              minWidth: 'auto',
-              '& .MuiAlert-icon': {
-                color: 'white',
-                fontSize: '16px',
-                marginRight: '8px',
-              },
-              '& .MuiAlert-message': {
-                color: 'white',
-                fontWeight: 500,
-                fontSize: '0.75rem',
-                padding: 0,
-              },
-              borderRadius: 1,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-              backdropFilter: 'blur(10px)',
-            }}
-          >
-            Workflow saved
-          </Alert>
-        </Snackbar> */}
+          editingEdge={editingEdge}
+          edgeConfig={edgeConfig}
+          onEdgeConfigChange={setEdgeConfig}
+          onSaveEdge={handleSaveEdge}
+          onDeleteEdge={handleDeleteEdge}
+          onCancelEditEdge={() => {
+            setEditingEdge(null);
+            setEdgeConfig({ type: 'normal', condition: '' });
+          }}
+          editingNode={editingNode}
+          nodeConfig={nodeConfig}
+          onNodeConfigChange={setNodeConfig}
+          onSaveNode={handleSaveNode}
+          onCancelEditNode={() => {
+            setEditingNode(null);
+            setNodeConfig({ name: '', kind: 'http', data: {} });
+          }}
+          isInstanceMode={isInstanceMode}
+        />
       </div>
     </WorkflowEditorProvider>
   );

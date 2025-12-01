@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { NodeConfig, NodeKind } from './_editor/domain/types';
+import { NodeConfig, NodeKind } from './domain/types';
 
 interface NodeModalProps {
   nodeId?: string; // Optional - if provided, it's edit mode
@@ -471,4 +471,5 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
     </div>
   );
 }
+
 

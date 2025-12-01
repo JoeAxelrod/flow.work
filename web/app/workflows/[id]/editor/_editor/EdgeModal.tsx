@@ -1,8 +1,8 @@
 'use client';
 
 import { Edge } from 'reactflow';
-import { EdgeConfig, EdgeType } from './_editor/domain/types';
-import { useWorkflowEditor } from './_editor/WorkflowEditorContext';
+import { EdgeConfig, EdgeType } from './domain/types';
+import { useWorkflowEditor } from './WorkflowEditorContext';
 
 interface EdgeModalProps {
   edgeId?: string; // Optional - if provided, it's edit mode (for future add-edge support)
@@ -254,4 +254,5 @@ export function EdgeModal({
     </div>
   );
 }
+
 

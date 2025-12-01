@@ -1,0 +1,42 @@
+{
+  "name": "copy-dir-files-to-clipboard",
+  "displayName": "Copy Dir Files To Clipboard",
+  "version": "0.0.2",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:extension.copyDirFilesWithContent"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.copyDirFilesWithContent",
+          "title": "Copy folder files 🧠📦 (with content)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "extension.copyDirFilesWithContent",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}
+
+
