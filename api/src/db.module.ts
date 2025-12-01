@@ -21,6 +21,12 @@ import { pgProviders } from './pg.providers';
       
         const pool = new Pool(config);
       
+        // Handle pool errors gracefully - don't crash the server
+        pool.on('error', (err) => {
+          console.error('⚠️ [PG Pool] Unexpected error on idle client:', err.message);
+          // Don't throw - let the pool handle reconnection automatically
+        });
+      
         try {
           await pool.query('SELECT 1'); // test connection
         } catch (err) {

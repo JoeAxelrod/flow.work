@@ -145,12 +145,22 @@ export class RabbitMQService implements OnModuleDestroy {
         this.log.log(`Timer fired: Published next activity to Kafka: instanceId=${m.instanceId}, nextNodeIds=${nextNodeIds.join(', ')}`);
       } else {
         // No next node found - workflow is complete
+        // Get instance state for output
+        const { rows: activityRows } = await this.db.query(
+          `SELECT output FROM _activity WHERE instance_id=$1 ORDER BY created_at ASC`,
+          [m.instanceId]
+        );
+        const instanceOutput = activityRows.reduce((acc: any, r: any) => ({ ...acc, ...r.output }), {});
+        
         await this.db.query(`
           UPDATE _instance 
-          SET status='success', finished_at=now() 
-          WHERE id=$1 AND status='running'
-        `, [m.instanceId]);
+          SET status='success', finished_at=now(), output=$1
+          WHERE id=$2 AND status='running'
+        `, [JSON.stringify(instanceOutput), m.instanceId]);
         this.log.log(`Timer fired but no next node found, marking instance as completed: instanceId=${m.instanceId}, nodeId=${m.nodeId}`);
+
+        // Check if this workflow has a parent workflow activity waiting and publish it
+        await this.engineService.checkAndPublishParentActivity(m.instanceId);
       }
     } catch (error) {
       this.log.error(`Failed to process timer event: ${String(error)}`, error instanceof Error ? error.stack : undefined);

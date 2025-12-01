@@ -111,6 +111,7 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
             <option value="hook">Hook</option>
             <option value="timer">Timer</option>
             <option value="join">Join</option>
+            <option value="workflow">Workflow</option>
           </select>
         </div>
 
@@ -169,6 +170,43 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
                 cursor: isReadOnly ? 'not-allowed' : 'text',
               }}
             />
+          </div>
+        )}
+
+        {normalizedConfig.kind === 'workflow' && (
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
+              Workflow ID
+            </label>
+            <input
+              type="text"
+              value={normalizedConfig.data.workflowId || normalizedConfig.data.workflow_id || ''}
+              onChange={(e) =>
+                onConfigChange({
+                  ...normalizedConfig,
+                  data: { 
+                    ...normalizedConfig.data, 
+                    workflowId: e.target.value,
+                    workflow_id: e.target.value // Support both formats
+                  },
+                })
+              }
+              placeholder="Enter workflow UUID"
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                cursor: isReadOnly ? 'not-allowed' : 'text',
+              }}
+            />
+            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
+              The UUID of the workflow to execute as a nested workflow
+            </div>
           </div>
         )}
 

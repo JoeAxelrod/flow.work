@@ -257,7 +257,259 @@ export class EngineService {
   }
 
 
-  async createInstance(workflowId: string, input: any = {}): Promise<{ id: string; workflowId: string; status: string; input: any; output: any; startedAt: Date }> {
+  /**
+   * Checks the nesting depth of an instance by traversing up the parent chain
+   * Also checks for recursion by verifying if any parent has the same workflow_id
+   * Returns the depth (0 = root, 1 = first level nested, etc.)
+   * Throws an error if recursion is detected or depth exceeds 10
+   */
+  private async checkNestingDepthAndRecursion(instanceId: string, targetWorkflowId: string): Promise<number> {
+    let depth = 0;
+    let currentInstanceId: string | null = instanceId;
+    const maxDepth = 10;
+    const visitedWorkflowIds = new Set<string>();
+
+    type InstanceRow = { parent_instance_id: string | null; workflow_id: string };
+
+    while (currentInstanceId && depth < maxDepth) {
+      const { rows } = await this.db.query(
+        `SELECT parent_instance_id, workflow_id FROM _instance WHERE id=$1`,
+        [currentInstanceId]
+      ) as { rows: InstanceRow[] };
+
+      if (rows.length === 0) {
+        break;
+      }
+
+      const row = rows[0];
+      const currentWorkflowId = row.workflow_id;
+      
+      // Check for recursion: if we've seen this workflow_id before in the chain, it's a cycle
+      if (visitedWorkflowIds.has(currentWorkflowId)) {
+        throw new Error(`Recursion detected: workflow ${currentWorkflowId} is already in the execution chain`);
+      }
+      
+      // Check if target workflow matches any workflow in the chain (prevent direct recursion)
+      if (currentWorkflowId === targetWorkflowId) {
+        throw new Error(`Recursion detected: cannot execute workflow ${targetWorkflowId} as it is already in the execution chain`);
+      }
+
+      visitedWorkflowIds.add(currentWorkflowId);
+
+      const parentInstanceId = row.parent_instance_id;
+      if (!parentInstanceId) {
+        break; // Reached root instance
+      }
+
+      depth++;
+      currentInstanceId = parentInstanceId;
+    }
+
+    if (depth >= maxDepth) {
+      throw new Error(`Maximum nesting depth (10) exceeded`);
+    }
+
+    return depth;
+  }
+
+  /**
+   * Checks if an instance has exceeded the maximum activity limit (150)
+   */
+  private async checkActivityLimit(instanceId: string): Promise<boolean> {
+    const { rows } = await this.db.query(
+      `SELECT COUNT(*) as count FROM _activity WHERE instance_id=$1`,
+      [instanceId]
+    );
+
+    const count = parseInt(rows[0]?.count || '0', 10);
+    return count < 150;
+  }
+
+  /**
+   * Checks if a completed workflow has a parent workflow activity waiting
+   * and publishes that activity to continue the parent workflow execution
+   */
+  async checkAndPublishParentActivity(instanceId: string): Promise<void> {
+    try {
+      // Check if this instance has a parent
+      const { rows: instanceRows } = await this.db.query(
+        `SELECT parent_instance_id, status, output FROM _instance WHERE id=$1`,
+        [instanceId]
+      );
+
+      if (instanceRows.length === 0 || !instanceRows[0].parent_instance_id) {
+        return; // No parent, nothing to do
+      }
+
+      const parentInstanceId = instanceRows[0].parent_instance_id;
+      const nestedOutput = instanceRows[0].output || {};
+      const nestedStatus = instanceRows[0].status;
+
+      // Find the workflow node activity in parent that's waiting for this nested workflow
+      const { rows: activityRows } = await this.db.query(`
+        SELECT a.id, a.node_id, a.instance_id, a.input, n.kind
+        FROM _activity a
+        JOIN _node n ON n.id = a.node_id
+        WHERE a.instance_id = $1
+          AND n.kind = 'workflow'
+          AND a.status = 'running'
+        ORDER BY a.created_at DESC
+        LIMIT 1
+      `, [parentInstanceId]);
+
+      if (activityRows.length === 0) {
+        this.log.log(`No waiting workflow node activity found in parent instance ${parentInstanceId}`);
+        return;
+      }
+
+      const parentActivity = activityRows[0];
+      const parentActivityId = parentActivity.id;
+      const parentNodeId = parentActivity.node_id;
+
+      // If nested workflow failed, mark parent activity as failed
+      if (nestedStatus === 'failed') {
+        const { rows: errorRows } = await this.db.query(
+          `SELECT error FROM _instance WHERE id=$1`,
+          [instanceId]
+        );
+        const error = errorRows[0]?.error || 'Nested workflow failed';
+        
+        await this.db.query(`
+          UPDATE _activity 
+          SET status='failed', error=$1, finished_at=now(), updated_at=now() 
+          WHERE id=$2
+        `, [error, parentActivityId]);
+
+        // Emit activity failed event
+        const { rows: nodeRows } = await this.db.query(
+          `SELECT label, kind FROM _node WHERE id=$1`,
+          [parentNodeId]
+        );
+        if (nodeRows.length > 0) {
+          this.emitActivityUpdateEvent(
+            parentInstanceId,
+            parentActivityId,
+            parentNodeId,
+            nodeRows[0].label || 'Unknown',
+            nodeRows[0].kind || 'workflow',
+            'failed',
+            parentActivity.input,
+            null,
+            error,
+            new Date(),
+            new Date()
+          );
+        }
+        return;
+      }
+
+      // Complete the parent workflow node activity with nested workflow output
+      await this.db.query(`
+        UPDATE _activity 
+        SET status='success', output=$1, finished_at=now(), updated_at=now() 
+        WHERE id=$2
+      `, [JSON.stringify(nestedOutput), parentActivityId]);
+
+      // Emit activity completed event
+      const { rows: nodeRows } = await this.db.query(
+        `SELECT label, kind FROM _node WHERE id=$1`,
+        [parentNodeId]
+      );
+      if (nodeRows.length > 0) {
+        const { rows: finishedRows } = await this.db.query(
+          `SELECT started_at, finished_at FROM _activity WHERE id=$1`,
+          [parentActivityId]
+        );
+        const finishedAt = finishedRows[0]?.finished_at;
+        const startedAt = finishedRows[0]?.started_at;
+
+        this.emitActivityUpdateEvent(
+          parentInstanceId,
+          parentActivityId,
+          parentNodeId,
+          nodeRows[0].label || 'Unknown',
+          nodeRows[0].kind || 'workflow',
+          'success',
+          parentActivity.input,
+          nestedOutput,
+          null,
+          startedAt,
+          finishedAt
+        );
+      }
+
+      // Publish next nodes from the parent workflow node
+      const nextNodeIds = await this.findNextNodes(parentInstanceId, parentNodeId, nestedOutput);
+      if (nextNodeIds.length > 0) {
+        // Fetch target kinds once
+        const { rows: nextNodeRows } = await this.db.query(
+          `SELECT id, kind FROM _node WHERE id = ANY($1::uuid[])`,
+          [nextNodeIds]
+        );
+        const nextKind = new Map<string, string>(nextNodeRows.map((r: any) => [r.id, r.kind]));
+
+        const instanceState = await this.instanceState(parentInstanceId);
+        const nextInput = { ...instanceState, ...nestedOutput };
+        
+        // Publish to all next nodes, but only gate join targets
+        for (const nextNodeId of nextNodeIds) {
+          const targetKind = nextKind.get(nextNodeId);
+
+          // Only JOIN targets are gated
+          if (targetKind === 'join') {
+            const canProceed = await this.canProceedToNode(parentInstanceId, nextNodeId);
+            if (!canProceed) {
+              this.log.log(`Skipping publish for join node ${nextNodeId} - waiting for all prerequisites to complete`);
+              continue;
+            }
+          }
+
+          // Edge conditions only matter when SOURCE is join
+          const { rows: sourceNodeRows } = await this.db.query(
+            `SELECT kind FROM _node WHERE id=$1`,
+            [parentNodeId]
+          );
+          if (sourceNodeRows.length > 0 && sourceNodeRows[0].kind === 'join') {
+            const edgeConditionMet = await this.checkEdgeCondition(parentInstanceId, parentNodeId, nextNodeId, { input: nextInput });
+            if (!edgeConditionMet) {
+              this.log.log(`Skipping publish for node ${nextNodeId} - edge condition not met`);
+              continue;
+            }
+          }
+
+          await this.kafka.publishActivity(parentInstanceId, nextNodeId, nextInput);
+          this.log.log(`Published parent workflow activity to Kafka: instanceId=${parentInstanceId}, nextNodeId=${nextNodeId}`);
+        }
+      } else {
+        // No next node found - parent workflow-instance is complete
+        await this.db.query(`
+          UPDATE _instance 
+          SET status='success', finished_at=now() 
+          WHERE id=$1 AND status='running'
+        `, [parentInstanceId]);
+        this.log.log(`No next node found in parent workflow, marking instance as completed: instanceId=${parentInstanceId}`);
+
+        // Emit instance completed event
+        if (this.eventsGateway) {
+          const { rows: parentInstanceRows } = await this.db.query(`
+            SELECT status, finished_at FROM _instance WHERE id=$1
+          `, [parentInstanceId]);
+          if (parentInstanceRows.length > 0) {
+            this.eventsGateway.emitInstanceStatusUpdate(parentInstanceId, {
+              instanceId: parentInstanceId,
+              status: parentInstanceRows[0].status,
+              finishedAt: parentInstanceRows[0].finished_at,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail the workflow completion
+      this.log.error(`Failed to publish parent workflow activity: ${String(error)}`, error instanceof Error ? error.stack : undefined);
+    }
+  }
+
+  async createInstance(workflowId: string, input: any = {}, parentInstanceId: string | null = null): Promise<{ id: string; workflowId: string; status: string; input: any; output: any; startedAt: Date }> {
     // Verify workflow exists
     const { rows: workflowRows } = await this.db.query(
       `SELECT id FROM _workflow WHERE id=$1`,
@@ -270,10 +522,10 @@ export class EngineService {
 
     // Create instance
     const { rows } = await this.db.query(
-      `INSERT INTO _instance(workflow_id, status, input)
-       VALUES ($1, 'running', $2)
+      `INSERT INTO _instance(workflow_id, status, input, parent_instance_id)
+       VALUES ($1, 'running', $2, $3)
        RETURNING id, workflow_id, status, input, output, started_at`,
-      [workflowId, JSON.stringify(input)]
+      [workflowId, JSON.stringify(input), parentInstanceId]
     );
 
     return {
@@ -307,6 +559,12 @@ export class EngineService {
       const nodeLabel = node.label || 'Unknown';
       const nodeKind = node.kind || 'http';
       const nodeData = node.data || {};
+
+      // Check activity limit - prevent endless loops (max 150 activities per instance)
+      const canAddActivity = await this.checkActivityLimit(instanceId);
+      if (!canAddActivity) {
+        throw new Error(`Maximum activity limit (150) reached for instance ${instanceId}. Cannot execute more activities.`);
+      }
 
       // Get instance state for FEEL context
       const instanceState = await this.instanceState(instanceId);
@@ -443,6 +701,62 @@ export class EngineService {
               input: activityRows[0].input,
               output: output
             };
+          case 'workflow':
+            // Workflow node: execute a nested workflow
+            const targetWorkflowId = nodeData.workflowId || nodeData.workflow_id;
+            if (!targetWorkflowId) {
+              throw new Error('Workflow node must have workflowId in data');
+            }
+
+            // Check nesting depth and prevent recursion
+            // await this.checkNestingDepthAndRecursion(instanceId, targetWorkflowId);
+
+            // Create nested workflow instance with parent reference
+            const nestedInstance = await this.createInstance(targetWorkflowId, transformedInput, instanceId);
+            
+            // Get the first node of the nested workflow
+            const { rows: firstNodeRows } = await this.db.query(
+              `SELECT id FROM _node WHERE workflow_id=$1 AND NOT EXISTS (
+                SELECT 1 FROM _edge WHERE target_id=_node.id
+              ) LIMIT 1`,
+              [targetWorkflowId]
+            );
+
+            if (firstNodeRows.length === 0) {
+              throw new Error(`No start node found in workflow ${targetWorkflowId}`);
+            }
+
+            // Execute the nested workflow's first node
+            // This will trigger the nested workflow execution
+            await this.executeActivity(nestedInstance.id, firstNodeRows[0].id, transformedInput);
+
+            // Keep activity in 'running' status - it will be completed when nested workflow finishes
+            // The nested workflow will publish this activity when it completes
+            await client.query('COMMIT');
+            client.release();
+            clientReleased = true;
+            
+            // Emit activity update showing it's waiting for nested workflow
+            this.emitActivityUpdateEvent(
+              instanceId,
+              activityId,
+              nodeId,
+              nodeLabel,
+              nodeKind,
+              'running',
+              activityRows[0].input,
+              { nestedInstanceId: nestedInstance.id },
+              null,
+              startedAt,
+              null
+            );
+            
+            return {
+              id: activityId,
+              status: 'running',
+              input: activityRows[0].input,
+              output: { nestedInstanceId: nestedInstance.id }
+            };
           case 'join':
             // Join node: pass through input, waits for all incoming edges to complete
             // The canProceedToNode check ensures all prerequisites are met before execution
@@ -555,9 +869,9 @@ export class EngineService {
               // No next node found - workflow-instance is complete
               await this.db.query(`
                 UPDATE _instance 
-                SET status='success', finished_at=now() 
-                WHERE id=$1 AND status='running'
-              `, [instanceId]);
+                SET status='success', finished_at=now(), output=$1
+                WHERE id=$2 AND status='running'
+              `, [JSON.stringify(await this.instanceState(instanceId)), instanceId]);
               this.log.log(`No next node found, marking instance as completed: instanceId=${instanceId}`);
 
               // Emit instance completed event
@@ -573,6 +887,9 @@ export class EngineService {
                   });
                 }
               }
+
+              // Check if this workflow has a parent workflow activity waiting and publish it
+              await this.checkAndPublishParentActivity(instanceId);
             }
           } catch (error) {
             // Log error but don't fail the activity execution

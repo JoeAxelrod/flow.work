@@ -2,7 +2,12 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- enums
 DO $$ BEGIN
-  CREATE TYPE node_kind AS ENUM ('http','hook','timer','join');
+  CREATE TYPE node_kind AS ENUM ('http','hook','timer','join','workflow');
+EXCEPTION WHEN duplicate_object THEN END $$;
+
+-- Add 'workflow' to existing enum if it doesn't exist
+DO $$ BEGIN
+  ALTER TYPE node_kind ADD VALUE IF NOT EXISTS 'workflow';
 EXCEPTION WHEN duplicate_object THEN END $$;
 
 DO $$ BEGIN
@@ -55,6 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_edge_target ON public._edge(target_id);
 CREATE TABLE IF NOT EXISTS public._instance (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workflow_id UUID NOT NULL REFERENCES public._workflow(id) ON DELETE CASCADE,
+  parent_instance_id UUID NULL REFERENCES public._instance(id) ON DELETE CASCADE,
   status      instance_status NOT NULL DEFAULT 'running',
   input       JSONB NOT NULL DEFAULT '{}'::jsonb,
   output      JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -64,6 +70,7 @@ CREATE TABLE IF NOT EXISTS public._instance (
 );
 
 CREATE INDEX IF NOT EXISTS idx_instance_workflow ON public._instance(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_instance_parent ON public._instance(parent_instance_id);
 
 -- activities (no action_id)
 CREATE TABLE IF NOT EXISTS public._activity (
