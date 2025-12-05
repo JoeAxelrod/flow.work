@@ -3,6 +3,24 @@
 import { Edge } from 'reactflow';
 import { EdgeConfig, EdgeType } from './domain/types';
 import { useWorkflowEditor } from './WorkflowEditorContext';
+import { Delete as DeleteIcon } from '@mui/icons-material';
+
+// Dark theme colors (matching CodeLayout)
+const colors = {
+  bg: '#0d1117',
+  bgAlt: '#161b22',
+  border: '#30363d',
+  text: '#c9d1d9',
+  textMuted: '#8b949e',
+  keyword: '#ff7b72',
+  string: '#a5d6ff',
+  function: '#d2a8ff',
+  variable: '#79c0ff',
+  comment: '#8b949e',
+  success: '#3fb950',
+  cursor: '#58a6ff',
+  error: '#f85149',
+};
 
 interface EdgeModalProps {
   edgeId?: string; // Optional - if provided, it's edit mode (for future add-edge support)
@@ -28,7 +46,7 @@ export function EdgeModal({
   const { getNodeName } = useWorkflowEditor();
 
   const isEditMode = !!edge;
-  const title = isReadOnly ? 'View Edge' : (isEditMode ? 'Edit Edge' : 'Add New Edge');
+  const title = isReadOnly ? 'view edge' : (isEditMode ? 'edit edge' : 'new edge');
   const sourceName = edge ? getNodeName(edge.source) : '';
   const targetName = edge ? getNodeName(edge.target) : '';
 
@@ -40,7 +58,7 @@ export function EdgeModal({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -50,28 +68,41 @@ export function EdgeModal({
     >
       <div
         style={{
-          backgroundColor: 'white',
+          backgroundColor: colors.bg,
+          border: `1px solid ${colors.border}`,
           padding: '24px',
           borderRadius: '8px',
           minWidth: '400px',
           maxWidth: '90vw',
+          fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '1.25rem', fontWeight: 'bold' }}>
-          {title}
+        <h3 style={{ 
+          marginTop: 0, 
+          marginBottom: '16px', 
+          fontSize: '1rem', 
+          fontWeight: '600',
+          color: colors.text,
+        }}>
+          <span style={{ color: colors.keyword }}>const</span>{' '}
+          <span style={{ color: colors.variable }}>{title}</span>{' '}
+          <span style={{ color: colors.text }}>=</span>{' '}
+          <span style={{ color: colors.function }}>{`{}`}</span>
         </h3>
 
         {isEditMode && edge && (
-          <div style={{ marginBottom: '16px', padding: '8px', background: '#f3f4f6', borderRadius: '4px' }}>
-            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-              From: <strong>{sourceName}</strong> → To: <strong>{targetName}</strong>
+          <div style={{ marginBottom: '16px', padding: '8px', background: colors.bgAlt, borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+            <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+              <span style={{ color: colors.variable }}>{sourceName}</span>
+              <span style={{ color: colors.keyword }}> → </span>
+              <span style={{ color: colors.variable }}>{targetName}</span>
             </div>
           </div>
         )}
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Edge Type</label>
+          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>type</label>
           <select
             value={config.type}
             onChange={(e) => {
@@ -94,22 +125,25 @@ export function EdgeModal({
             disabled={isReadOnly}
             style={{
               width: '100%',
-              padding: '8px',
-              border: '1px solid #d1d5db',
+              padding: '10px 12px',
+              border: `1px solid ${colors.border}`,
               borderRadius: '4px',
               fontSize: '14px',
-              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+              backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+              color: colors.text,
               cursor: isReadOnly ? 'not-allowed' : 'pointer',
+              outline: 'none',
             }}
           >
-            <option value="normal">Normal</option>
-            <option value="if">If (Conditional)</option>
+            <option value="normal">normal</option>
+            <option value="if">if (conditional)</option>
           </select>
         </div>
 
         {config.type === 'if' && (
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Condition</label>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>condition</label>
             <input
               type="text"
               value={config.condition}
@@ -152,22 +186,25 @@ export function EdgeModal({
               disabled={isReadOnly}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.string,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
+                outline: 'none',
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-              Example: input.someparam {'<'} 5
+            <div style={{ marginTop: '4px', fontSize: '0.7rem', color: colors.comment }}>
+              // example: input.someparam {'<'} 5
             </div>
           </div>
         )}
 
         {!isReadOnly && (
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${colors.border}`, paddingTop: '16px' }}>
             {isEditMode && onDelete && (
               <button
                 onClick={() => {
@@ -177,30 +214,20 @@ export function EdgeModal({
                 }}
                 style={{
                   padding: '8px 16px',
-                  background: '#ef4444',
-                  color: 'white',
-                  border: 'none',
+                  background: 'transparent',
+                  color: colors.error,
+                  border: `1px solid ${colors.error}`,
                   borderRadius: '4px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
+                  fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                  fontSize: '13px',
                 }}
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-                Delete
+                <DeleteIcon sx={{ fontSize: 14 }} />
+                delete
               </button>
             )}
             <div style={{ display: 'flex', gap: '8px', marginLeft: isEditMode && onDelete ? '0' : 'auto' }}>
@@ -208,45 +235,51 @@ export function EdgeModal({
                 onClick={onCancel}
                 style={{
                   padding: '8px 16px',
-                  background: '#6b7280',
-                  color: 'white',
-                  border: 'none',
+                  background: 'transparent',
+                  color: colors.textMuted,
+                  border: `1px solid ${colors.border}`,
                   borderRadius: '4px',
                   cursor: 'pointer',
+                  fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                  fontSize: '13px',
                 }}
               >
-                Cancel
+                cancel
               </button>
               <button
                 onClick={onSave}
                 style={{
                   padding: '8px 16px',
-                  background: '#4f46e5',
-                  color: 'white',
+                  background: colors.cursor,
+                  color: colors.bg,
                   border: 'none',
                   borderRadius: '4px',
                   cursor: 'pointer',
+                  fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                  fontSize: '13px',
                 }}
               >
-                Save
+                save
               </button>
             </div>
           </div>
         )}
         {isReadOnly && (
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: `1px solid ${colors.border}`, paddingTop: '16px' }}>
             <button
               onClick={onCancel}
               style={{
                 padding: '8px 16px',
-                background: '#6b7280',
-                color: 'white',
-                border: 'none',
+                background: 'transparent',
+                color: colors.textMuted,
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 cursor: 'pointer',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                fontSize: '13px',
               }}
             >
-              Close
+              close
             </button>
           </div>
         )}
@@ -254,5 +287,3 @@ export function EdgeModal({
     </div>
   );
 }
-
-

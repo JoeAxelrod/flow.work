@@ -1,6 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Node, useReactFlow } from 'reactflow';
 
+// Dark theme colors (matching CodeLayout)
+const colors = {
+  bg: '#0d1117',
+  bgAlt: '#161b22',
+  border: '#30363d',
+  text: '#c9d1d9',
+  textMuted: '#8b949e',
+  keyword: '#ff7b72',
+  string: '#a5d6ff',
+  function: '#d2a8ff',
+  variable: '#79c0ff',
+  comment: '#8b949e',
+  success: '#3fb950',
+  cursor: '#58a6ff',
+  error: '#f85149',
+};
+
 interface MetadataPanelOverlayProps {
   nodeId: string;
   nodes: Node[];
@@ -97,26 +114,28 @@ export function MetadataPanelOverlay({ nodeId, nodes, onClose }: MetadataPanelOv
         top: `${position.y}px`,
         width: '400px',
         maxHeight: '80vh',
-        background: 'white',
-        border: '2px solid #4f46e5',
+        background: colors.bg,
+        border: `1px solid ${colors.cursor}`,
         borderRadius: '8px',
         padding: '16px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
         zIndex: 1000,
         overflow: 'auto',
         pointerEvents: 'auto',
+        fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-          {selectedNode?.data?.label || 'Node Metadata'}
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: colors.variable }}>
+          {selectedNode?.data?.label || 'node metadata'}
         </h3>
         <button
           onClick={onClose}
           style={{
             background: 'transparent',
-            border: 'none',
-            fontSize: '20px',
+            border: `1px solid ${colors.border}`,
+            borderRadius: '4px',
+            fontSize: '14px',
             cursor: 'pointer',
             padding: '0',
             width: '24px',
@@ -124,31 +143,35 @@ export function MetadataPanelOverlay({ nodeId, nodes, onClose }: MetadataPanelOv
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            color: colors.textMuted,
           }}
         >
           ×
         </button>
       </div>
-      <div style={{ fontSize: '12px', marginBottom: '12px' }}>
-        <strong>Status:</strong>{' '}
+      <div style={{ fontSize: '12px', marginBottom: '12px', color: colors.textMuted }}>
+        <span style={{ color: colors.comment }}>// </span>
+        <span style={{ color: colors.keyword }}>status: </span>
         <span style={{ 
-          color: metadata.status === 'success' ? '#10b981' : 
-                 metadata.status === 'failed' ? '#ef4444' : '#6b7280' 
+          color: metadata.status === 'success' ? colors.success : 
+                 metadata.status === 'failed' ? colors.error : colors.textMuted 
         }}>
           {metadata.status}
         </span>
       </div>
       {metadata.input && (
         <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Input:</div>
+          <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '12px', color: colors.function }}>input:</div>
           <pre style={{ 
-            background: '#f3f4f6', 
+            background: colors.bgAlt, 
+            border: `1px solid ${colors.border}`,
             padding: '8px', 
             borderRadius: '4px', 
             fontSize: '11px', 
             overflow: 'auto', 
             maxHeight: '200px',
             margin: 0,
+            color: colors.string,
           }}>
             {JSON.stringify(metadata.input, null, 2)}
           </pre>
@@ -156,24 +179,26 @@ export function MetadataPanelOverlay({ nodeId, nodes, onClose }: MetadataPanelOv
       )}
       {metadata.output && (
         <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Output:</div>
+          <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '12px', color: colors.function }}>output:</div>
           <pre style={{ 
-            background: '#f3f4f6', 
+            background: colors.bgAlt, 
+            border: `1px solid ${colors.border}`,
             padding: '8px', 
             borderRadius: '4px', 
             fontSize: '11px', 
             overflow: 'auto', 
             maxHeight: '200px',
             margin: 0,
+            color: colors.string,
           }}>
             {JSON.stringify(metadata.output, null, 2)}
           </pre>
         </div>
       )}
       {metadata.error && (
-        <div style={{ marginTop: '12px', color: '#ef4444' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Error:</div>
-          <div style={{ fontSize: '12px' }}>{metadata.error}</div>
+        <div style={{ marginTop: '12px' }}>
+          <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '12px', color: colors.error }}>error:</div>
+          <div style={{ fontSize: '11px', color: colors.error, background: colors.bgAlt, border: `1px solid ${colors.error}`, padding: '8px', borderRadius: '4px' }}>{metadata.error}</div>
         </div>
       )}
     </div>

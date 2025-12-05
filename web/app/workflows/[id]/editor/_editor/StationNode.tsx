@@ -3,110 +3,56 @@
 import { useEffect, useState } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
 import { FlowNode, NodeKind } from './domain/types';
+import {
+  Language as HttpIcon,
+  Webhook as HookIcon,
+  Schedule as TimerIcon,
+  CallMerge as JoinIcon,
+  AccountTree as WorkflowIcon,
+  RadioButtonUnchecked as DefaultIcon,
+  Autorenew as SpinnerIcon,
+  Check as CheckIcon,
+  Settings as SettingsIcon,
+  Info as InfoIcon,
+  ContentCopy as CopyIcon,
+  Delete as DeleteIcon,
+} from '@mui/icons-material';
+
+// Dark theme colors (matching CodeLayout)
+const colors = {
+  bg: '#0d1117',
+  bgAlt: '#161b22',
+  border: '#30363d',
+  text: '#c9d1d9',
+  textMuted: '#8b949e',
+  function: '#d2a8ff',
+  variable: '#79c0ff',
+  success: '#3fb950',
+  cursor: '#58a6ff',
+  error: '#f85149',
+};
 
 interface StationNodeProps extends NodeProps {
   data: FlowNode['data'];
 }
 
+const iconSize = 12;
+
 function getKindIcon(kind: NodeKind) {
-  const iconSize = 12;
+  const iconStyle = { fontSize: iconSize };
   switch (kind) {
     case 'http':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-      );
+      return <HttpIcon sx={iconStyle} />;
     case 'hook':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />
-        </svg>
-      );
+      return <HookIcon sx={iconStyle} />;
     case 'timer':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-      );
+      return <TimerIcon sx={iconStyle} />;
     case 'join':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-        </svg>
-      );
+      return <JoinIcon sx={iconStyle} />;
     case 'workflow':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-          <rect x="7" y="7" width="10" height="10" rx="1" ry="1" />
-          <line x1="7" y1="7" x2="17" y2="17" />
-          <line x1="17" y1="7" x2="7" y2="17" />
-        </svg>
-      );
+      return <WorkflowIcon sx={iconStyle} />;
     default:
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      );
+      return <DefaultIcon sx={iconStyle} />;
   }
 }
 
@@ -124,11 +70,11 @@ export function StationNode({ data, id }: StationNodeProps) {
 
   // Get border color based on instance status
   const getBorderColor = () => {
-    if (!instanceData) return '#9ca3af'; // gray for no activity
+    if (!instanceData) return colors.border; // dark border for no activity
     const status = instanceData.status?.toLowerCase();
-    if (status === 'success' || status === 'completed') return '#10b981'; // green for success
-    if (status === 'failed' || status === 'error') return '#ef4444'; // red for failed/error
-    return '#9ca3af'; // gray for other statuses (no activity)
+    if (status === 'success' || status === 'completed') return colors.success; // green for success
+    if (status === 'failed' || status === 'error') return colors.error; // red for failed/error
+    return colors.border; // dark border for other statuses (no activity)
   };
 
   const handleMetadataToggle = (e: React.MouseEvent) => {
@@ -146,21 +92,21 @@ export function StationNode({ data, id }: StationNodeProps) {
     instanceData.status?.toLowerCase() !== 'failed' &&
     instanceData.status?.toLowerCase() !== 'error';
 
-  // In instance mode, always use activity-based colors (gray/green/red), never purple
-  // Outside instance mode, use purple for nodes without activity, gray/green/red for nodes with activity
+  // In instance mode, always use activity-based colors, never accent color
+  // Outside instance mode, use accent for nodes without activity, activity-based colors for nodes with activity
   const borderColor = isInstanceMode
-    ? getBorderColor() // In instance mode: always gray/green/red based on activity
-    : (instanceData ? getBorderColor() : '#4f46e5'); // Outside instance mode: purple if no activity, otherwise activity-based
+    ? getBorderColor() // In instance mode: always based on activity
+    : (instanceData ? getBorderColor() : colors.cursor); // Outside instance mode: accent if no activity, otherwise activity-based
 
   return (
     <div
       style={{
-        background: 'white',
+        background: colors.bgAlt,
         border: `2px solid ${borderColor}`,
         borderRadius: '8px',
         padding: '12px',
         minWidth: '150px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
         position: 'relative',
       }}
     >
@@ -200,8 +146,8 @@ export function StationNode({ data, id }: StationNodeProps) {
           position: 'absolute',
           top: '4px',
           left: '4px',
-          background: '#4f46e5',
-          color: 'white',
+          background: colors.function,
+          color: colors.bg,
           padding: '2px 4px 2px 2px',
           borderRadius: '4px',
           fontSize: '10px',
@@ -210,11 +156,12 @@ export function StationNode({ data, id }: StationNodeProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
+          fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
         }}
       >
         <div
           style={{
-            background: '#3730a3',
+            background: 'rgba(0,0,0,0.2)',
             borderRadius: '3px',
             padding: '2px',
             display: 'flex',
@@ -234,8 +181,8 @@ export function StationNode({ data, id }: StationNodeProps) {
             position: 'absolute',
             top: '4px',
             right: '4px',
-            background: '#111827',
-            color: 'white',
+            background: colors.bg,
+            color: colors.text,
             padding: '2px 6px',
             borderRadius: '999px',
             fontSize: '10px',
@@ -246,6 +193,8 @@ export function StationNode({ data, id }: StationNodeProps) {
             alignItems: 'center',
             justifyContent: 'center',
             gap: '4px',
+            border: `1px solid ${colors.border}`,
+            fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
           }}
           title={executionCount === 0 
             ? 'Not executed' 
@@ -253,43 +202,23 @@ export function StationNode({ data, id }: StationNodeProps) {
         >
           <span>{executionCount}</span>
           {isRunning && (
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              style={{ 
+            <SpinnerIcon
+              sx={{
+                fontSize: 10,
                 flexShrink: 0,
                 animation: 'spin 0.8s linear infinite',
+                color: colors.cursor,
               }}
-            >
-              <circle 
-                cx="12" 
-                cy="12" 
-                r="10" 
-                strokeDasharray="47" 
-                strokeDashoffset="23.5"
-                opacity="0.8"
-              />
-            </svg>
+            />
           )}
           {!isRunning && executionCount > 0 && instanceData && (instanceData.status?.toLowerCase() === 'success' || instanceData.status?.toLowerCase() === 'completed') && (
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#10b981"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0 }}
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+            <CheckIcon
+              sx={{
+                fontSize: 10,
+                flexShrink: 0,
+                color: colors.success,
+              }}
+            />
           )}
         </div>
       )}
@@ -315,15 +244,22 @@ export function StationNode({ data, id }: StationNodeProps) {
         }}
       >
         <div style={{ flex: 1, marginRight: '8px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
+          <div style={{ 
+            fontWeight: 'bold', 
+            fontSize: '14px', 
+            color: colors.variable,
+            fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+          }}>
             {data.label}
           </div>
-          <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
-            {id.slice(-4)}
-          </div>
           {instanceData && (
-            <div style={{ fontSize: '10px', color: instanceData.status === 'success' ? '#10b981' : instanceData.status === 'failed' ? '#ef4444' : '#6b7280', marginTop: '4px' }}>
-              Status: {instanceData.status}
+            <div style={{ 
+              fontSize: '10px', 
+              color: instanceData.status === 'success' ? colors.success : instanceData.status === 'failed' ? colors.error : colors.textMuted, 
+              marginTop: '4px',
+              fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+            }}>
+              {instanceData.status}
             </div>
           )}
         </div>
@@ -335,8 +271,8 @@ export function StationNode({ data, id }: StationNodeProps) {
               window.dispatchEvent(event);
             }}
             style={{
-              background: '#4f46e5',
-              border: 'none',
+              background: 'transparent',
+              border: `1px solid ${colors.border}`,
               borderRadius: '4px',
               width: '24px',
               height: '24px',
@@ -348,26 +284,14 @@ export function StationNode({ data, id }: StationNodeProps) {
             }}
             title="Settings"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+            <SettingsIcon sx={{ fontSize: 14, color: colors.textMuted }} />
           </button>
           {instanceData && (
             <button
               onClick={handleMetadataToggle}
               style={{
-                background: '#4f46e5',
-                border: 'none',
+                background: 'transparent',
+                border: `1px solid ${colors.cursor}`,
                 borderRadius: '4px',
                 width: '24px',
                 height: '24px',
@@ -379,20 +303,7 @@ export function StationNode({ data, id }: StationNodeProps) {
               }}
               title="View metadata"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
+              <InfoIcon sx={{ fontSize: 14, color: colors.cursor }} />
             </button>
           )}
           {!isInstanceMode && (
@@ -404,8 +315,8 @@ export function StationNode({ data, id }: StationNodeProps) {
                   window.dispatchEvent(event);
                 }}
                 style={{
-                  background: '#10b981',
-                  border: 'none',
+                  background: 'transparent',
+                  border: `1px solid ${colors.success}`,
                   borderRadius: '4px',
                   width: '24px',
                   height: '24px',
@@ -417,19 +328,7 @@ export function StationNode({ data, id }: StationNodeProps) {
                 }}
                 title="Copy node"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
+                <CopyIcon sx={{ fontSize: 14, color: colors.success }} />
               </button>
               <button
                 onClick={(e) => {
@@ -440,8 +339,8 @@ export function StationNode({ data, id }: StationNodeProps) {
                   }
                 }}
                 style={{
-                  background: '#ef4444',
-                  border: 'none',
+                  background: 'transparent',
+                  border: `1px solid ${colors.error}`,
                   borderRadius: '4px',
                   width: '24px',
                   height: '24px',
@@ -453,21 +352,7 @@ export function StationNode({ data, id }: StationNodeProps) {
                 }}
                 title="Delete node"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  <line x1="10" y1="11" x2="10" y2="17" />
-                  <line x1="14" y1="11" x2="14" y2="17" />
-                </svg>
+                <DeleteIcon sx={{ fontSize: 14, color: colors.error }} />
               </button>
             </>
           )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useToast } from '../../../components/ToastContext';
 import { io, Socket } from 'socket.io-client';
 
@@ -26,10 +26,25 @@ import { useNodeEvents } from './_editor/hooks/useNodeEvents';
 import { useEditorHistory } from './_editor/hooks/useEditorHistory';
 import { useAutosaveWorkflow } from './_editor/hooks/useAutosaveWorkflow';
 import { useConnectEdge } from './_editor/hooks/useConnectEdge';
+import {
+  PageLayout,
+  MonoText,
+  CodeLine,
+  TerminalButton,
+  colors,
+} from '../../../components/CodeLayout';
+import { Box, IconButton } from '@mui/material';
+import {
+  ArrowBack as ArrowBackIcon,
+  Add as AddIcon,
+  Undo as UndoIcon,
+  Redo as RedoIcon,
+} from '@mui/icons-material';
 
 export default function WorkflowEditorPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const workflowId = params.id as string;
   const instanceId = searchParams.get('instanceId');
   const isInstanceMode = !!instanceId;
@@ -141,9 +156,22 @@ export default function WorkflowEditorPage() {
     }
   }, [workflowId, isInstanceMode, setNodes, setEdges]);
 
+  // Validate UUID format
+  const isValidUUID = (id: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
+
   // Fetch instance data if in instance mode
   const fetchInstance = useCallback(async () => {
     if (!isInstanceMode || !instanceId) return;
+
+    // Validate that instanceId is a valid UUID, not "undefined" string
+    if (!isValidUUID(instanceId)) {
+      console.error(`Invalid instanceId: "${instanceId}"`);
+      toast.showToast(`Invalid instance ID: "${instanceId}"`, 'error');
+      return;
+    }
 
     try {
       const instance = await getInstance(instanceId);
@@ -153,7 +181,8 @@ export default function WorkflowEditorPage() {
       console.error('Error fetching instance:', err);
       toast.showToast(`Failed to load instance: ${err.message}`, 'error');
     }
-  }, [isInstanceMode, instanceId, toast]);
+    // Note: toast.showToast is stable (wrapped in useCallback), so we only depend on it
+  }, [isInstanceMode, instanceId, toast.showToast]);
 
   useEffect(() => {
     fetchWorkflow();
@@ -165,8 +194,8 @@ export default function WorkflowEditorPage() {
 
   // Socket connection for real-time updates
   useEffect(() => {
-    if (!isInstanceMode || !instanceId) {
-      // Disconnect socket if not in instance mode
+    if (!isInstanceMode || !instanceId || !isValidUUID(instanceId)) {
+      // Disconnect socket if not in instance mode or invalid instanceId
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -713,138 +742,239 @@ export default function WorkflowEditorPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
-          <p className="mt-4 text-gray-600">Loading workflow...</p>
-        </div>
-      </div>
+      <PageLayout showNew={false}>
+        <Box
+          sx={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                border: `2px solid ${colors.border}`,
+                borderTopColor: colors.cursor,
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                mx: 'auto',
+                mb: 3,
+                '@keyframes spin': {
+                  '0%': { transform: 'rotate(0deg)' },
+                  '100%': { transform: 'rotate(360deg)' },
+                },
+              }}
+            />
+            <CodeLine sx={{ justifyContent: 'center' }}>
+              <span style={{ color: colors.function }}>loading</span>
+              <span style={{ color: colors.bracket }}>()</span>
+              <span style={{ color: colors.operator }}>...</span>
+            </CodeLine>
+          </Box>
+        </Box>
+      </PageLayout>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 text-lg">{error}</p>
-          <button
-            onClick={fetchWorkflow}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <PageLayout showNew={false}>
+        <Box
+          sx={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <MonoText sx={{ color: colors.error, fontSize: '14px', mb: 3 }}>
+              <span style={{ color: colors.keyword }}>error</span>
+              <span style={{ color: colors.operator }}>: </span>
+              {error}
+            </MonoText>
+            <TerminalButton
+              onClick={fetchWorkflow}
+              sx={{
+                bgcolor: colors.cursor,
+                color: colors.bg,
+                '&:hover': { bgcolor: '#4a90d9' },
+              }}
+            >
+              retry
+            </TerminalButton>
+          </Box>
+        </Box>
+      </PageLayout>
     );
   }
 
   return (
     <WorkflowEditorProvider nodes={nodes}>
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          height: '100vh',
+          bgcolor: colors.bg,
+          color: colors.text,
+          fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
         {/* Header */}
-        <div
-          style={{
-            padding: 8,
+        <Box
+          sx={{
+            borderBottom: `1px solid ${colors.border}`,
+            px: 2,
+            py: 1.5,
             display: 'flex',
-            gap: 8,
             alignItems: 'center',
-            background: '#f9fafb',
-            borderBottom: '1px solid #e5e7eb',
+            justifyContent: 'space-between',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
-            {workflowData?.workflow?.name || 'Workflow'}
-            {isInstanceMode && (
-              <span style={{ marginLeft: '12px', fontSize: '0.875rem', color: '#6b7280', fontWeight: 'normal' }}>
-                (Instance View - Read Only)
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <IconButton
+              onClick={() => router.push('/')}
+              sx={{
+                color: colors.textMuted,
+                p: 0.5,
+                '&:hover': { color: colors.text },
+              }}
+            >
+              <ArrowBackIcon sx={{ fontSize: 20 }} />
+            </IconButton>
+            <MonoText sx={{ fontSize: '14px', color: colors.text }}>
+              <span style={{ color: colors.function }}>
+                {workflowData?.workflow?.name || 'workflow'}
               </span>
-            )}
-          </h2>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ color: colors.operator }}>.</span>
+              <span style={{ color: colors.variable }}>editor</span>
+              <span style={{ color: colors.bracket }}>()</span>
+              {isInstanceMode && (
+                <span style={{ color: colors.comment, marginLeft: '12px' }}>
+                  // instance view - read only
+                </span>
+              )}
+            </MonoText>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
             {isSaving && (
-              <span style={{ fontSize: '0.875rem', color: '#6b7280', marginRight: '8px' }}>
-                Saving...
-              </span>
+              <MonoText sx={{ fontSize: '12px', color: colors.textMuted, mr: 1 }}>
+                saving...
+              </MonoText>
             )}
             {/* Undo/Redo buttons - hidden in instance mode */}
             {!isInstanceMode && (
               <>
-                <button
+                <TerminalButton
                   onClick={undo}
                   disabled={!canUndo}
-                  style={{
-                    padding: '8px 16px',
-                    background: !canUndo ? '#d1d5db' : '#6366f1',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
+                  sx={{
+                    minWidth: 'auto',
+                    px: 1.5,
+                    py: 0.75,
+                    bgcolor: 'transparent',
+                    color: !canUndo ? colors.textMuted : colors.text,
+                    border: `1px solid ${colors.border}`,
+                    opacity: !canUndo ? 0.5 : 1,
                     cursor: !canUndo ? 'not-allowed' : 'pointer',
-                    opacity: !canUndo ? 0.6 : 1,
+                    '&:hover': {
+                      bgcolor: !canUndo ? 'transparent' : colors.bgAlt,
+                      borderColor: !canUndo ? colors.border : colors.textMuted,
+                    },
                   }}
                   title="Undo (Ctrl+Z)"
                 >
-                  Undo
-                </button>
-                <button
+                  <UndoIcon sx={{ fontSize: 16 }} />
+                </TerminalButton>
+                <TerminalButton
                   onClick={redo}
                   disabled={!canRedo}
-                  style={{
-                    padding: '8px 16px',
-                    background: !canRedo ? '#d1d5db' : '#6366f1',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
+                  sx={{
+                    minWidth: 'auto',
+                    px: 1.5,
+                    py: 0.75,
+                    bgcolor: 'transparent',
+                    color: !canRedo ? colors.textMuted : colors.text,
+                    border: `1px solid ${colors.border}`,
+                    opacity: !canRedo ? 0.5 : 1,
                     cursor: !canRedo ? 'not-allowed' : 'pointer',
-                    opacity: !canRedo ? 0.6 : 1,
+                    '&:hover': {
+                      bgcolor: !canRedo ? 'transparent' : colors.bgAlt,
+                      borderColor: !canRedo ? colors.border : colors.textMuted,
+                    },
                   }}
                   title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
                 >
-                  Redo
-                </button>
+                  <RedoIcon sx={{ fontSize: 16 }} />
+                </TerminalButton>
               </>
             )}
             {!isInstanceMode && (
-              <button
+              <TerminalButton
                 onClick={() => setShowAddNodeModal(true)}
-                style={{
-                  padding: '8px 16px',
-                  background: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
+                sx={{
+                  bgcolor: colors.success,
+                  color: colors.bg,
+                  '&:hover': { bgcolor: '#2ea043' },
                 }}
+                startIcon={<AddIcon sx={{ fontSize: 14 }} />}
               >
-                Add Node
-              </button>
+                add node
+              </TerminalButton>
             )}
-          </div>
-        </div>
+          </Box>
+        </Box>
 
         {/* ReactFlow Canvas */}
-        <FlowCanvas
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onConnectStart={onConnectStart}
-          onConnectEnd={onConnectEnd}
-          onNodeClick={onNodeClick}
-          onEdgeClick={onEdgeClick}
-          onEdgeDoubleClick={onEdgeDoubleClick}
-          onEdgeMouseEnter={onEdgeMouseEnter}
-          onEdgeMouseMove={onEdgeMouseMove}
-          onEdgeMouseLeave={onEdgeMouseLeave}
-          onEdgeContextMenu={onEdgeContextMenu}
-          onEdgeUpdate={onEdgeUpdate}
-          onEdgeUpdateStart={onEdgeUpdateStart}
-          onEdgeUpdateEnd={onEdgeUpdateEnd}
-          isInstanceMode={isInstanceMode}
-          selectedNodeForMetadata={selectedNodeForMetadata}
-          onCloseMetadata={() => setSelectedNodeForMetadata(null)}
-        />
+        <Box sx={{ flex: 1, position: 'relative', minHeight: 0 }}>
+          <FlowCanvas
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onEdgeDoubleClick={onEdgeDoubleClick}
+            onEdgeMouseEnter={onEdgeMouseEnter}
+            onEdgeMouseMove={onEdgeMouseMove}
+            onEdgeMouseLeave={onEdgeMouseLeave}
+            onEdgeContextMenu={onEdgeContextMenu}
+            onEdgeUpdate={onEdgeUpdate}
+            onEdgeUpdateStart={onEdgeUpdateStart}
+            onEdgeUpdateEnd={onEdgeUpdateEnd}
+            isInstanceMode={isInstanceMode}
+            selectedNodeForMetadata={selectedNodeForMetadata}
+            onCloseMetadata={() => setSelectedNodeForMetadata(null)}
+          />
+        </Box>
+
+        {/* Footer */}
+        <Box
+          sx={{
+            borderTop: `1px solid ${colors.border}`,
+            px: 4,
+            py: 1.5,
+          }}
+        >
+          <MonoText
+            sx={{
+              fontSize: '11px',
+              color: colors.comment,
+              textAlign: 'center',
+            }}
+          >
+            {'/* '}drag to connect • click edge to edit • double-click node to configure{' */'}
+          </MonoText>
+        </Box>
 
         {/* Modals */}
         <EditorModals
@@ -875,7 +1005,7 @@ export default function WorkflowEditorPage() {
           }}
           isInstanceMode={isInstanceMode}
         />
-      </div>
+      </Box>
     </WorkflowEditorProvider>
   );
 }

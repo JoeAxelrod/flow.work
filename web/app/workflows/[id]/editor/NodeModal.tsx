@@ -3,6 +3,23 @@
 import { useState } from 'react';
 import { NodeConfig, NodeKind } from './_editor/domain/types';
 
+// Dark theme colors (matching CodeLayout)
+const colors = {
+  bg: '#0d1117',
+  bgAlt: '#161b22',
+  border: '#30363d',
+  text: '#c9d1d9',
+  textMuted: '#8b949e',
+  keyword: '#ff7b72',
+  string: '#a5d6ff',
+  function: '#d2a8ff',
+  variable: '#79c0ff',
+  comment: '#8b949e',
+  success: '#3fb950',
+  cursor: '#58a6ff',
+  error: '#f85149',
+};
+
 interface NodeModalProps {
   nodeId?: string; // Optional - if provided, it's edit mode
   config: NodeConfig;
@@ -15,9 +32,9 @@ interface NodeModalProps {
 export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, isReadOnly = false }: NodeModalProps) {
   const [showInfo, setShowInfo] = useState(false);
   const isEditMode = !!nodeId;
-  const title = isReadOnly ? 'View Node' : (isEditMode ? 'Edit Node' : 'Add New Node');
-  const saveButtonText = isEditMode ? 'Save' : 'Add Node';
-  const saveButtonColor = isEditMode ? '#4f46e5' : '#10b981';
+  const title = isReadOnly ? 'view node' : (isEditMode ? 'edit node' : 'new node');
+  const saveButtonText = isEditMode ? 'save' : 'add node';
+  const saveButtonColor = isEditMode ? colors.cursor : colors.success;
 
   // Ensure config.data is always an object and kind defaults to 'http'
   const normalizedConfig = {
@@ -34,7 +51,7 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -44,49 +61,66 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
     >
       <div
         style={{
-          backgroundColor: 'white',
+          backgroundColor: colors.bg,
+          border: `1px solid ${colors.border}`,
           padding: '24px',
           borderRadius: '8px',
           minWidth: '400px',
           maxWidth: '90vw',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '1.25rem', fontWeight: 'bold' }}>
-          {title}
+        <h3 style={{ 
+          marginTop: 0, 
+          marginBottom: '16px', 
+          fontSize: '1rem', 
+          fontWeight: '600',
+          color: colors.text,
+        }}>
+          <span style={{ color: colors.keyword }}>const</span>{' '}
+          <span style={{ color: colors.variable }}>{title}</span>{' '}
+          <span style={{ color: colors.text }}>=</span>{' '}
+          <span style={{ color: colors.function }}>{`{}`}</span>
         </h3>
 
         {isEditMode && nodeId && (
-          <div style={{ marginBottom: '16px', padding: '8px', background: '#f3f4f6', borderRadius: '4px' }}>
-            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-              Node ID: <strong>{nodeId}</strong>
+          <div style={{ marginBottom: '16px', padding: '8px', background: colors.bgAlt, borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+            <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+              <span style={{ color: colors.comment }}>// </span>
+              id: <span style={{ color: colors.string }}>{nodeId}</span>
             </div>
           </div>
         )}
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Name</label>
+          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>name</label>
           <input
             type="text"
             value={normalizedConfig.name}
             onChange={(e) => onConfigChange({ ...normalizedConfig, name: e.target.value })}
-            placeholder="Node name"
+            placeholder="node-name"
             readOnly={isReadOnly}
             disabled={isReadOnly}
             style={{
               width: '100%',
-              padding: '8px',
-              border: '1px solid #d1d5db',
+              padding: '10px 12px',
+              border: `1px solid ${colors.border}`,
               borderRadius: '4px',
               fontSize: '14px',
-              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+              backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+              color: colors.text,
               cursor: isReadOnly ? 'not-allowed' : 'text',
+              outline: 'none',
             }}
           />
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Kind {normalizedConfig.kind}</label>
+          <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>kind <span style={{ color: colors.function }}>{normalizedConfig.kind}</span></label>
           <select
             value={normalizedConfig.kind || 'http'}
             onChange={(e) =>
@@ -99,25 +133,28 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
             disabled={isReadOnly}
             style={{
               width: '100%',
-              padding: '8px',
-              border: '1px solid #d1d5db',
+              padding: '10px 12px',
+              border: `1px solid ${colors.border}`,
               borderRadius: '4px',
               fontSize: '14px',
-              backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+              fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+              backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+              color: colors.text,
               cursor: isReadOnly ? 'not-allowed' : 'pointer',
+              outline: 'none',
             }}
           >
-            <option value="http">HTTP</option>
-            <option value="hook">Hook</option>
-            <option value="timer">Timer</option>
-            <option value="join">Join</option>
-            <option value="workflow">Workflow</option>
+            <option value="http">http</option>
+            <option value="hook">hook</option>
+            <option value="timer">timer</option>
+            <option value="join">join</option>
+            <option value="workflow">workflow</option>
           </select>
         </div>
 
         {normalizedConfig.kind === 'http' && (
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>URL</label>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>url</label>
             <input
               type="text"
               value={normalizedConfig.data.url || ''}
@@ -132,12 +169,15 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
               disabled={isReadOnly}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.string,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
+                outline: 'none',
               }}
             />
           </div>
@@ -145,8 +185,8 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
 
         {normalizedConfig.kind === 'timer' && (
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
-              Delay (milliseconds)
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>
+              delay <span style={{ color: colors.comment }}>(ms)</span>
             </label>
             <input
               type="number"
@@ -162,12 +202,15 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
               disabled={isReadOnly}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.variable,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
+                outline: 'none',
               }}
             />
           </div>
@@ -175,8 +218,8 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
 
         {normalizedConfig.kind === 'workflow' && (
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
-              Workflow ID
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>
+              workflowId
             </label>
             <input
               type="text"
@@ -191,61 +234,64 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
                   },
                 })
               }
-              placeholder="Enter workflow UUID"
+              placeholder="uuid-of-nested-workflow"
               readOnly={isReadOnly}
               disabled={isReadOnly}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.string,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
+                outline: 'none',
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-              The UUID of the workflow to execute as a nested workflow
+            <div style={{ marginTop: '4px', fontSize: '0.7rem', color: colors.comment }}>
+              // uuid of the workflow to execute as nested workflow
             </div>
           </div>
         )}
 
-        <div style={{ marginBottom: '16px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ marginBottom: '16px', marginTop: '24px', paddingTop: '16px', borderTop: `1px solid ${colors.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <h4 style={{ marginTop: 0, marginBottom: 0, fontSize: '1rem', fontWeight: '600', color: '#374151' }}>
-              JSONata Expressions
+            <h4 style={{ marginTop: 0, marginBottom: 0, fontSize: '0.875rem', fontWeight: '600', color: colors.function }}>
+              // JSONata Expressions
             </h4>
             <button
               onClick={() => setShowInfo(!showInfo)}
               style={{
-                width: '20px',
-                height: '20px',
+                width: '18px',
+                height: '18px',
                 borderRadius: '50%',
-                border: '1px solid #d1d5db',
-                backgroundColor: '#f9fafb',
-                color: '#6b7280',
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.bgAlt,
+                color: colors.textMuted,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '12px',
+                fontSize: '10px',
                 fontWeight: 'bold',
                 padding: 0,
               }}
               title="Show JSONata examples"
             >
-              i
+              ?
             </button>
           </div>
-          <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: '#6b7280' }}>
-            Use JSONata expressions to transform input and output. Input/output are always JSON objects.
+          <p style={{ marginBottom: '16px', fontSize: '0.75rem', color: colors.comment }}>
+            Use JSONata expressions to transform input and output.
             <a 
               href="https://docs.jsonata.org/simple" 
               target="_blank" 
               rel="noopener noreferrer"
-              style={{ marginLeft: '8px', color: '#3b82f6', textDecoration: 'underline' }}
+              style={{ marginLeft: '8px', color: colors.cursor, textDecoration: 'none' }}
             >
-              Documentation
+              docs →
             </a>
           </p>
 
@@ -253,101 +299,69 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
             <div style={{
               marginBottom: '16px',
               padding: '16px',
-              backgroundColor: '#f9fafb',
-              border: '1px solid #e5e7eb',
+              backgroundColor: colors.bgAlt,
+              border: `1px solid ${colors.border}`,
               borderRadius: '6px',
-              fontSize: '0.875rem',
+              fontSize: '0.75rem',
             }}>
-              <div style={{ marginBottom: '12px', fontWeight: '600', color: '#374151' }}>
+              <div style={{ marginBottom: '12px', fontWeight: '600', color: colors.text }}>
                 JSONata Examples:
               </div>
               
-              <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#eff6ff', borderRadius: '4px', fontSize: '0.75rem', color: '#1e40af' }}>
+              <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: colors.bg, borderRadius: '4px', fontSize: '0.7rem', color: colors.cursor, border: `1px solid ${colors.border}` }}>
                 <strong>Context Variables:</strong>
-                <div style={{ marginTop: '4px' }}>
-                  • <code>input</code> = instanceState + currentInput (merged, for convenience)<br/>
-                  • <code>currentInput</code> = raw input passed to this node<br/>
-                  • <code>instanceState</code> = all outputs from previous nodes<br/>
-                  • <code>node</code> = node metadata (id, name, label, kind)
+                <div style={{ marginTop: '4px', color: colors.textMuted }}>
+                  • <code style={{ color: colors.variable }}>input</code> = instanceState + currentInput<br/>
+                  • <code style={{ color: colors.variable }}>currentInput</code> = raw input to this node<br/>
+                  • <code style={{ color: colors.variable }}>instanceState</code> = outputs from previous nodes<br/>
+                  • <code style={{ color: colors.variable }}>node</code> = node metadata (id, name, label, kind)
                 </div>
               </div>
               
               <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>1. Simple Queries - Navigating Objects:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                <strong style={{ color: colors.text }}>1. Simple Queries:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: colors.bg, borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.7rem', color: colors.string, border: `1px solid ${colors.border}` }}>
                   {`{ "userId": input.userId, "name": input.profile.name }`}
                 </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Access nested properties using dot notation
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: colors.text }}>2. Array Operations:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: colors.bg, borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.7rem', color: colors.string, border: `1px solid ${colors.border}` }}>
+                  {`{ "firstItem": input.items[0], "lastItem": input.items[-1] }`}
                 </div>
               </div>
 
               <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>2. Array Operations:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {`{ "firstItem": input.items[0], "lastItem": input.items[-1], "allIds": input.items.id }`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Access array elements by index (0-based, -1 for last)
+                <strong style={{ color: colors.text }}>3. String Functions:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: colors.bg, borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.7rem', color: colors.string, border: `1px solid ${colors.border}` }}>
+                  {`{ "upper": $uppercase(input.name), "lower": $lowercase(input.email) }`}
                 </div>
               </div>
 
               <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>3. String Functions:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {`{ "upperName": $uppercase(input.name), "lowerEmail": $lowercase(input.email), "trimmed": $trim(input.description) }`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Transform strings: $uppercase(), $lowercase(), $trim()
+                <strong style={{ color: colors.text }}>4. Filtering:</strong>
+                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: colors.bg, borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.7rem', color: colors.string, border: `1px solid ${colors.border}` }}>
+                  {`{ "active": input.users[status = "active"] }`}
                 </div>
               </div>
 
-              <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>4. Predicate Queries - Filtering:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {`{ "activeUsers": input.users[status = "active"], "highValue": input.orders[total > 100] }`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Filter arrays based on conditions
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>5. Date/Time Functions:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {`{ "timestamp": $now(), "millis": $millis(), "date": $fromMillis(input.timestamp) }`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Work with dates: $now(), $millis(), $fromMillis()
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '12px' }}>
-                <strong style={{ color: '#374151' }}>6. Node Metadata:</strong>
-                <div style={{ marginTop: '4px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {`{ "nodeName": node.name, "nodeId": node.id, "nodeKind": node.kind, "message": "Processing in " & node.name }`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-                  Access node information: node.id, node.name, node.label, node.kind
-                </div>
-              </div>
-
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#6b7280' }}>
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${colors.border}`, fontSize: '0.7rem', color: colors.comment }}>
                 <a 
                   href="https://docs.jsonata.org/simple" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  style={{ color: '#3b82f6', textDecoration: 'underline' }}
+                  style={{ color: colors.cursor, textDecoration: 'none' }}
                 >
-                  View full JSONata documentation →
+                  full docs →
                 </a>
               </div>
             </div>
           )}
           
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
-              Input Expression (JSONata)
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>
+              inputExpression
             </label>
             <textarea
               value={normalizedConfig.data.inputExpression || normalizedConfig.data.input_expression || ''}
@@ -361,30 +375,32 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
                   },
                 })
               }
-              placeholder='Example: { "userId": input.userId, "nodeName": node.name }'
+              placeholder='{ "userId": input.userId }'
               readOnly={isReadOnly}
               disabled={isReadOnly}
-              rows={4}
+              rows={3}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
-                fontSize: '14px',
-                fontFamily: 'monospace',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontSize: '13px',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.string,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
                 resize: 'vertical',
+                outline: 'none',
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-              Available context: input (instanceState + currentInput), instanceState, currentInput (raw input), node (id, name, label, kind)
+            <div style={{ marginTop: '4px', fontSize: '0.65rem', color: colors.comment }}>
+              // context: input, instanceState, currentInput, node
             </div>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
-              Output Expression (JSONata)
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', color: colors.textMuted, fontSize: '12px' }}>
+              outputExpression
             </label>
             <textarea
               value={normalizedConfig.data.outputExpression || normalizedConfig.data.output_expression || ''}
@@ -398,52 +414,58 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
                   },
                 })
               }
-              placeholder='Example: { "processed": true, "result": output.data }'
+              placeholder='{ "result": output.data }'
               readOnly={isReadOnly}
               disabled={isReadOnly}
-              rows={4}
+              rows={3}
               style={{
                 width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
+                padding: '10px 12px',
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
-                fontSize: '14px',
-                fontFamily: 'monospace',
-                backgroundColor: isReadOnly ? '#f3f4f6' : 'white',
+                fontSize: '13px',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                backgroundColor: isReadOnly ? colors.bgAlt : colors.bg,
+                color: colors.string,
                 cursor: isReadOnly ? 'not-allowed' : 'text',
                 resize: 'vertical',
+                outline: 'none',
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#6b7280' }}>
-              Available context: input, output, instanceState, currentOutput (same as output), node (id, name, label, kind)
+            <div style={{ marginTop: '4px', fontSize: '0.65rem', color: colors.comment }}>
+              // context: input, output, instanceState, node
             </div>
           </div>
         </div>
 
         {!isReadOnly && (
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: `1px solid ${colors.border}`, paddingTop: '16px' }}>
             <button
               onClick={onCancel}
               style={{
                 padding: '8px 16px',
-                background: '#6b7280',
-                color: 'white',
-                border: 'none',
+                background: 'transparent',
+                color: colors.textMuted,
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 cursor: 'pointer',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                fontSize: '13px',
               }}
             >
-              Cancel
+              cancel
             </button>
             <button
               onClick={onSave}
               style={{
                 padding: '8px 16px',
                 background: saveButtonColor,
-                color: 'white',
+                color: colors.bg,
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                fontSize: '13px',
               }}
             >
               {saveButtonText}
@@ -451,19 +473,21 @@ export function NodeModal({ nodeId, config, onConfigChange, onSave, onCancel, is
           </div>
         )}
         {isReadOnly && (
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: `1px solid ${colors.border}`, paddingTop: '16px' }}>
             <button
               onClick={onCancel}
               style={{
                 padding: '8px 16px',
-                background: '#6b7280',
-                color: 'white',
-                border: 'none',
+                background: 'transparent',
+                color: colors.textMuted,
+                border: `1px solid ${colors.border}`,
                 borderRadius: '4px',
                 cursor: 'pointer',
+                fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                fontSize: '13px',
               }}
             >
-              Close
+              close
             </button>
           </div>
         )}

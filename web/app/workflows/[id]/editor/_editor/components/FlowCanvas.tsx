@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactFlow, {
   Background,
+  BackgroundVariant,
   ConnectionMode,
   Edge,
   Node,
@@ -10,6 +11,13 @@ import ReactFlow, {
 } from 'reactflow';
 import { MetadataPanelOverlay } from './MetadataPanelOverlay';
 import { StationNode } from '../StationNode';
+
+// Dark theme colors (matching CodeLayout)
+const colors = {
+  bg: '#0d1117',
+  bgAlt: '#161b22',
+  border: '#30363d',
+};
 
 const nodeTypes = {
   node: StationNode,
@@ -66,7 +74,7 @@ export function FlowCanvas({
   onCloseMetadata,
 }: FlowCanvasProps) {
   return (
-    <div style={{ flex: 1 }}>
+    <div style={{ flex: 1, height: '100%', width: '100%', background: colors.bg }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -93,8 +101,17 @@ export function FlowCanvas({
         nodesDraggable={!isInstanceMode}
         edgesUpdatable={!isInstanceMode}
         fitView
+        style={{ background: colors.bg }}
+        defaultEdgeOptions={{
+          style: { stroke: colors.border, strokeWidth: 2 },
+        }}
       >
-        <Background />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          color={colors.border}
+        />
         {isInstanceMode && selectedNodeForMetadata && (
           <MetadataPanelOverlay
             nodeId={selectedNodeForMetadata}
