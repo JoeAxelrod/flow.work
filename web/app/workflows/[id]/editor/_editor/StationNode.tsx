@@ -110,7 +110,7 @@ export function StationNode({ data, id }: StationNodeProps) {
         position: 'relative',
       }}
     >
-      {/* 2 handles: left + right. Each can be start OR end (with ConnectionMode.Loose). */}
+      {/* 4 handles: left, right, top, bottom. Each can be start OR end (with ConnectionMode.Loose). */}
       {!isHook && (
         <>
           <Handle
@@ -131,6 +131,28 @@ export function StationNode({ data, id }: StationNodeProps) {
             position={Position.Right}
             style={{
               top: '50%',
+              pointerEvents: allowConnections ? 'auto' : 'none',
+              opacity: allowConnections ? 1 : 0,
+            }}
+            isConnectableStart={allowConnections}
+            isConnectableEnd={allowConnections}
+          />
+          <Handle
+            id="top"
+            type="source"
+            position={Position.Top}
+            style={{
+              pointerEvents: allowConnections ? 'auto' : 'none',
+              opacity: allowConnections ? 1 : 0,
+            }}
+            isConnectableStart={allowConnections}
+            isConnectableEnd={allowConnections}
+          />
+          <Handle
+            id="bottom"
+            type="source"
+            position={Position.Bottom}
+            style={{
               pointerEvents: allowConnections ? 'auto' : 'none',
               opacity: allowConnections ? 1 : 0,
             }}
