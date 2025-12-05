@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { Connection, Edge, MarkerType, addEdge } from 'reactflow';
-import { useToast } from '../../../../components/ToastContext';
+import { useToast } from '../../../../../components/ToastContext';
 
 interface UseConnectEdgeProps {
   nodes: any[];
@@ -61,9 +61,7 @@ export function useConnectEdge({ nodes, setEdges, toast }: UseConnectEdgeProps) 
       const sourceNode = nodes.find((n) => n.id === correctedParams.source);
       const targetNode = nodes.find((n) => n.id === correctedParams.target);
 
-      console.log(1);
-
-      if (sourceNode?.data.kind === 'hook' || targetNode?.data.kind === 'hook') {
+      if (targetNode?.data.kind === 'hook') {
         toast.showToast('Hook nodes cannot have edges connected to them', 'warning');
         return;
       }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, NotFoundException } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, NotFoundException, ParseUUIDPipe } from '@nestjs/common';
 import { Pool } from 'pg';
 import { WorkflowsService } from './workflows.service';
 import { EngineService } from '../engine/engine.service';
@@ -29,7 +29,7 @@ export class WorkflowsController {
 
   // get workflow by id
   @Get(':id')
-  async getById(@Param('id') id: string) {
+  async getById(@Param('id', ParseUUIDPipe) id: string) {
     const workflow = await this.svc.getById(id);
     if (!workflow) throw new NotFoundException('Workflow not found');
     return workflow;
@@ -37,19 +37,21 @@ export class WorkflowsController {
 
   // get instances for a workflow
   @Get(':id/instances')
-  async getInstances(@Param('id') id: string) {
+  async getInstances(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getInstances(id);
   }
 
   // get a single instance by instance ID
   @Get('instances/:instanceId')
-  async getInstance(@Param('instanceId') instanceId: string) {
-    return this.svc.getInstance(instanceId);
+  async getInstance(@Param('instanceId', ParseUUIDPipe) instanceId: string) {
+    const instance = await this.svc.getInstance(instanceId);
+    if (!instance) throw new NotFoundException('Instance not found');
+    return instance;
   }
 
   // start by API: POST /api/v1/workflows/:id  body provides url+data for S1
   @Post(':id')
-  async start(@Param('id') id:string, @Body() body:any) {
+  async start(@Param('id', ParseUUIDPipe) id: string, @Body() body: any) {
     // Get first node (node with no incoming edges)
     const nodeId = await this.svc.firstNodeId(id);
     if (!nodeId) throw new Error('start node not found');

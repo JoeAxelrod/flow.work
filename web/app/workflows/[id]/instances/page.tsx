@@ -1,45 +1,38 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { getWorkflow, getWorkflowInstances } from '../../../api-client';
-import { useToast } from '../../../components/ToastContext';
+"use client";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { getWorkflow, getWorkflowInstances } from "../../../api-client";
+import { useToast } from "../../../components/ToastContext";
+import {
+  PageLayout,
+  MonoText,
+  CodeLine,
+  TerminalButton,
+  colors,
+  fadeIn,
+} from "../../../components/CodeLayout";
 import {
   Box,
-  Container,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  AppBar,
-  Toolbar,
   IconButton,
-  Avatar,
-  Chip,
-  LinearProgress,
-  Stack,
-  useTheme,
-  alpha,
   styled,
-} from '@mui/material';
+} from "@mui/material";
 import {
-  AccountTree as WorkflowIcon,
   ArrowBack as ArrowBackIcon,
   PlayArrow as PlayIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   Schedule as ScheduleIcon,
-  CalendarToday as CalendarIcon,
-  Circle as NodeIcon,
+  Close as CloseIcon,
+  Language as HttpIcon,
+  Webhook as HookIcon,
+  CallMerge as JoinIcon,
+  RadioButtonUnchecked as DefaultIcon,
   Visibility as VisibilityIcon,
   Code as CodeIcon,
-  Close as CloseIcon,
-} from '@mui/icons-material';
-import { motion } from 'framer-motion';
+} from "@mui/icons-material";
 
-type NodeKind = 'http' | 'hook' | 'timer' | 'join';
-
+type NodeKind = "http" | "hook" | "timer" | "join";
 
 interface Node {
   id: string;
@@ -73,118 +66,104 @@ interface Workflow {
   name: string;
 }
 
-// Styled Components
-const GlowCard = styled(Card)(({ theme }) => ({
-  position: 'relative',
-  overflow: 'visible',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  '&:hover': {
-    transform: 'translateY(-4px)',
-    boxShadow: `0 12px 24px ${alpha(theme.palette.primary.main, 0.2)}`,
-  },
-}));
+const InstanceRow = styled(Box)({
+  padding: "16px",
+  background: colors.bgAlt,
+  border: `1px solid ${colors.border}`,
+  borderRadius: "4px",
+  transition: "all 0.15s ease",
+});
 
-const GradientText = styled(Typography)(({ theme }) => ({
-  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
-  backgroundClip: 'text',
-}));
+const NodeCard = styled(Box)({
+  padding: "10px 12px",
+  background: colors.bg,
+  border: `1px solid ${colors.border}`,
+  borderRadius: "4px",
+  minWidth: "180px",
+  transition: "all 0.15s ease",
+  "&:hover": {
+    borderColor: colors.textMuted,
+  },
+});
+
+const ActionButton = styled("button")({
+  fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+  fontSize: "10px",
+  padding: "3px 8px",
+  borderRadius: "3px",
+  border: `1px solid ${colors.border}`,
+  background: "transparent",
+  color: colors.textMuted,
+  cursor: "pointer",
+  transition: "all 0.15s ease",
+  display: "flex",
+  alignItems: "center",
+  gap: "3px",
+  "&:hover": {
+    borderColor: colors.textMuted,
+    color: colors.text,
+  },
+});
 
 function getKindIcon(kind: NodeKind) {
-  const iconSize = 8;
+  const iconStyle = { fontSize: 10 };
   switch (kind) {
-    case 'http':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-      );
-    case 'hook':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />
-        </svg>
-      );
-    case 'timer':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-      );
-    case 'join':
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-        </svg>
-      );
+    case "http":
+      return <HttpIcon sx={iconStyle} />;
+    case "hook":
+      return <HookIcon sx={iconStyle} />;
+    case "timer":
+      return <ScheduleIcon sx={iconStyle} />;
+    case "join":
+      return <JoinIcon sx={iconStyle} />;
     default:
-      return (
-        <svg
-          width={iconSize}
-          height={iconSize}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      );
+      return <DefaultIcon sx={iconStyle} />;
+  }
+}
+
+function getStatusColor(status: string) {
+  switch (status?.toLowerCase()) {
+    case "success":
+    case "completed":
+      return colors.success;
+    case "failed":
+      return colors.error;
+    case "running":
+      return colors.cursor;
+    case "cancelled":
+      return colors.warning;
+    default:
+      return colors.textMuted;
+  }
+}
+
+function getStatusIcon(status: string) {
+  const iconStyle = { fontSize: 14 };
+  switch (status?.toLowerCase()) {
+    case "success":
+    case "completed":
+      return <CheckCircleIcon sx={iconStyle} />;
+    case "failed":
+      return <ErrorIcon sx={iconStyle} />;
+    case "running":
+      return <ScheduleIcon sx={iconStyle} />;
+    default:
+      return <PlayIcon sx={iconStyle} />;
   }
 }
 
 export default function InstancesPage() {
   const params = useParams();
   const router = useRouter();
-  const theme = useTheme();
   const toast = useToast();
   const workflowId = params.id as string;
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState<{ nodeId: string; type: 'input' | 'output' } | null>(null);
+  const [dialogOpen, setDialogOpen] = useState<{
+    nodeId: string;
+    type: "input" | "output";
+  } | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -200,199 +179,31 @@ export default function InstancesPage() {
       setWorkflow(workflowData.workflow);
       setInstances(instancesData);
     } catch (error: any) {
-      console.error('Error fetching data:', error);
-      toast.showToast(`Failed to load data: ${error.message}`, 'error');
+      console.error("Error fetching data:", error);
+      toast.showToast(`Error: ${error.message}`, "error");
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'success':
-      case 'completed':
-        return 'success';
-      case 'failed':
-        return 'error';
-      case 'running':
-        return 'info';
-      case 'cancelled':
-        return 'warning';
-      default:
-        return 'default';
-    }
+  const formatDate = (date: string) => {
+    return new Date(date).toISOString().replace("T", " ").substring(0, 19);
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'success':
-      case 'completed':
-        return <CheckCircleIcon />;
-      case 'failed':
-        return <ErrorIcon />;
-      case 'running':
-        return <ScheduleIcon />;
-      case 'cancelled':
-        return <ErrorIcon />;
-      default:
-        return <PlayIcon />;
-    }
-  };
-
-  const getActivityStatusColor = (status: string): 'success' | 'error' | 'info' | 'warning' | 'default' => {
-    switch (status?.toLowerCase()) {
-      case 'success':
-      case 'completed':
-        return 'success';
-      case 'failed':
-        return 'error';
-      case 'running':
-        return 'info';
-      case 'created':
-      case 'skipped':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const getActivityStatusColorValue = (status: string) => {
-    const color = getActivityStatusColor(status);
-    return theme.palette[color]?.main || theme.palette.grey[500];
-  };
-
-  const getStatusColorValue = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'default') {
-      return theme.palette.grey[500];
-    }
-    return theme.palette[color as 'success' | 'error' | 'info' | 'warning']?.main || theme.palette.grey[500];
-  };
-
-  const handleOpenDialog = (nodeId: string, type: 'input' | 'output') => {
-    setDialogOpen({ nodeId, type });
-  };
-
-  const handleCloseDialog = () => {
-    setDialogOpen(null);
-  };
-
-  const getModalContent = () => {
-    if (!dialogOpen) return null;
-    
-    const instance = instances.find(i => i.nodes?.some(n => n.id === dialogOpen.nodeId));
-    const node = instance?.nodes?.find(n => n.id === dialogOpen.nodeId);
-    
-    if (!node) return null;
-    
-    const data = dialogOpen.type === 'input' ? node.input : node.output;
-    
-    return (
-      <Box
-        onClick={handleCloseDialog}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          bgcolor: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 1300,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          p: 2,
-        }}
-      >
-        <Card
-          onClick={(e) => e.stopPropagation()}
-          sx={{
-            maxWidth: '800px',
-            width: '100%',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column',
-            borderRadius: 2,
-            boxShadow: theme.shadows[24],
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              p: 2,
-              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CodeIcon />
-              <Typography variant="h6">
-                {dialogOpen.type === 'input' ? 'Input' : 'Output'} - {node.nodeName || 'Node'}
-              </Typography>
-            </Box>
-            <IconButton onClick={handleCloseDialog} size="small">
-              <CloseIcon />
-            </IconButton>
-          </Box>
-          <Box
-            sx={{
-              p: 2,
-              overflow: 'auto',
-              flex: 1,
-            }}
-          >
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: alpha(theme.palette.background.paper, 0.5),
-                borderRadius: 1,
-                border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
-              }}
-            >
-              <Typography
-                component="pre"
-                sx={{
-                  fontFamily: 'monospace',
-                  fontSize: '0.875rem',
-                  m: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {JSON.stringify(data, null, 2)}
-              </Typography>
-            </Box>
-          </Box>
-          <Box
-            sx={{
-              p: 2,
-              borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-              display: 'flex',
-              justifyContent: 'flex-end',
-            }}
-          >
-            <Button onClick={handleCloseDialog} variant="contained">
-              Close
-            </Button>
-          </Box>
-        </Card>
-      </Box>
-    );
+  const formatDateShort = (date: string) => {
+    return new Date(date).toISOString().split("T")[0];
   };
 
   const getTimerDuration = (node: Node): number | null => {
-    if (node.nodeKind === 'timer') {
-      // First check if ms is directly in output or input
+    if (node.nodeKind === "timer") {
       if (node.output?.ms) return node.output.ms;
       if (node.input?.ms) return node.input.ms;
-      
-      // Calculate from scheduledFor timestamp if available
       if (node.output?.scheduledFor && node.startedAt) {
         try {
-          const scheduledFor = typeof node.output.scheduledFor === 'number' 
-            ? node.output.scheduledFor 
-            : new Date(node.output.scheduledFor).getTime();
+          const scheduledFor =
+            typeof node.output.scheduledFor === "number"
+              ? node.output.scheduledFor
+              : new Date(node.output.scheduledFor).getTime();
           const startedAt = new Date(node.startedAt).getTime();
           const duration = scheduledFor - startedAt;
           return duration > 0 ? duration : null;
@@ -404,421 +215,411 @@ export default function InstancesPage() {
     return null;
   };
 
-  return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* AppBar */}
-      <AppBar
-        position="sticky"
-        elevation={0}
+  const handleOpenDialog = (nodeId: string, type: "input" | "output") => {
+    setDialogOpen({ nodeId, type });
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(null);
+  };
+
+  const getModalContent = () => {
+    if (!dialogOpen) return null;
+
+    const instance = instances.find((i) =>
+      i.nodes?.some((n) => n.id === dialogOpen.nodeId)
+    );
+    const node = instance?.nodes?.find((n) => n.id === dialogOpen.nodeId);
+
+    if (!node) return null;
+
+    const data = dialogOpen.type === "input" ? node.input : node.output;
+
+    return (
+      <Box
+        onClick={handleCloseDialog}
         sx={{
-          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-          backdropFilter: 'blur(10px)',
-          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          bgcolor: "rgba(0, 0, 0, 0.8)",
+          zIndex: 1300,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: 2,
         }}
       >
-        <Toolbar>
-          <IconButton
-            edge="start"
-            color="inherit"
-            onClick={() => router.push('/workflows')}
-            sx={{ mr: 2 }}
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}>
-            <Avatar
-              sx={{
-                bgcolor: 'white',
-                color: theme.palette.primary.main,
-                width: 40,
-                height: 40,
-              }}
-            >
-              <WorkflowIcon />
-            </Avatar>
-            <Box>
-              <Typography
-                variant="h6"
-                component="div"
-                sx={{
-                  fontWeight: 700,
-                  color: 'white',
-                }}
-              >
-                {workflow?.name || 'Workflow Instances'}
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                {instances.length} {instances.length === 1 ? 'instance' : 'instances'}
-              </Typography>
-            </Box>
-          </Box>
-          <Button
-            component={Link}
-            href={`/workflows/${workflowId}/editor`}
+        <Box
+          onClick={(e) => e.stopPropagation()}
+          sx={{
+            maxWidth: "700px",
+            width: "100%",
+            maxHeight: "80vh",
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: colors.bg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: "8px",
+          }}
+        >
+          {/* Modal Header */}
+          <Box
             sx={{
-              color: 'white',
-              fontWeight: 600,
-              '&:hover': {
-                bgcolor: alpha(theme.palette.common.white, 0.1),
-              },
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              px: 3,
+              py: 2,
+              borderBottom: `1px solid ${colors.border}`,
             }}
           >
-            Edit Workflow
-          </Button>
-        </Toolbar>
-      </AppBar>
+            <MonoText sx={{ fontSize: "13px", color: colors.text }}>
+              <span style={{ color: colors.keyword }}>
+                {dialogOpen.type}
+              </span>
+              <span style={{ color: colors.textMuted }}>{" // "}</span>
+              <span style={{ color: colors.variable }}>
+                {node.nodeName || "node"}
+              </span>
+            </MonoText>
+            <IconButton
+              onClick={handleCloseDialog}
+              sx={{ color: colors.textMuted, p: 0.5 }}
+            >
+              <CloseIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Box>
 
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        {loading ? (
-          <Card sx={{ p: 8, textAlign: 'center' }}>
-            <LinearProgress sx={{ mb: 2 }} />
-            <Typography variant="body1" color="text.secondary">
-              Loading instances...
-            </Typography>
-          </Card>
-        ) : instances.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
+          {/* Modal Body */}
+          <Box
+            sx={{
+              p: 3,
+              overflow: "auto",
+              flex: 1,
+            }}
           >
-            <Card
+            <Box
+              component="pre"
               sx={{
-                p: 8,
-                textAlign: 'center',
-                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.secondary.main, 0.05)})`,
-                border: `2px dashed ${alpha(theme.palette.primary.main, 0.3)}`,
+                fontFamily:
+                  '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+                fontSize: "12px",
+                color: colors.text,
+                m: 0,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
               }}
             >
-              <PlayIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
-              <Typography variant="h5" sx={{ mb: 1, fontWeight: 600 }}>
-                No instances found
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                Create an instance to start executing this workflow
-              </Typography>
-              <Button
-                variant="contained"
-                startIcon={<PlayIcon />}
-                onClick={() => router.push('/workflows')}
+              {JSON.stringify(data, null, 2)}
+            </Box>
+          </Box>
+
+          {/* Modal Footer */}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "flex-end",
+              px: 3,
+              py: 2,
+              borderTop: `1px solid ${colors.border}`,
+            }}
+          >
+            <TerminalButton
+              onClick={handleCloseDialog}
+              sx={{
+                color: colors.textMuted,
+                "&:hover": { bgcolor: colors.bgAlt },
+              }}
+            >
+              close
+            </TerminalButton>
+          </Box>
+        </Box>
+      </Box>
+    );
+  };
+
+  return (
+    <PageLayout showNew={false}>
+      <Box sx={{ maxWidth: "1000px", mx: "auto", px: 4, py: 5, width: "100%" }}>
+        {/* Back Button & Title */}
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
+            <IconButton
+              onClick={() => router.push("/")}
+              sx={{
+                color: colors.textMuted,
+                p: 0.5,
+                "&:hover": { color: colors.text },
+              }}
+            >
+              <ArrowBackIcon sx={{ fontSize: 20 }} />
+            </IconButton>
+            <MonoText sx={{ fontSize: "14px", color: colors.text }}>
+              <span style={{ color: colors.function }}>
+                {workflow?.name || "workflow"}
+              </span>
+              <span style={{ color: colors.operator }}>.</span>
+              <span style={{ color: colors.variable }}>instances</span>
+              <span style={{ color: colors.bracket }}>()</span>
+            </MonoText>
+          </Box>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              pb: 2,
+              borderBottom: `1px solid ${colors.border}`,
+            }}
+          >
+            <MonoText sx={{ fontSize: "13px", color: colors.comment }}>
+              {`// ${instances.length} instance${instances.length !== 1 ? "s" : ""}`}
+            </MonoText>
+            <TerminalButton
+              onClick={() => router.push(`/workflows/${workflowId}/editor`)}
+              sx={{
+                color: colors.cursor,
+                border: `1px solid ${colors.border}`,
+                "&:hover": { bgcolor: colors.bgAlt, borderColor: colors.cursor },
+              }}
+            >
+              edit workflow
+            </TerminalButton>
+          </Box>
+        </Box>
+
+        {/* Instances List */}
+        {loading ? (
+          <Box sx={{ py: 4 }}>
+            <CodeLine>
+              <span style={{ color: colors.function }}>fetching</span>
+              <span style={{ color: colors.bracket }}>()</span>
+              <span style={{ color: colors.operator }}>...</span>
+            </CodeLine>
+          </Box>
+        ) : instances.length === 0 ? (
+          <Box
+            sx={{
+              py: 6,
+              textAlign: "center",
+              border: `1px dashed ${colors.border}`,
+              borderRadius: "4px",
+            }}
+          >
+            <MonoText sx={{ color: colors.textMuted, mb: 3, fontSize: "14px" }}>
+              <span style={{ color: colors.comment }}>{"// "}</span>
+              no instances found
+            </MonoText>
+            <TerminalButton
+              onClick={() => router.push("/")}
+              sx={{
+                bgcolor: colors.bgAlt,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                "&:hover": { bgcolor: colors.border },
+              }}
+            >
+              go to workflows
+            </TerminalButton>
+          </Box>
+        ) : (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {instances.map((instance, index) => (
+              <InstanceRow
+                key={instance.id}
                 sx={{
-                  textTransform: 'none',
-                  fontWeight: 600,
+                  animation: `${fadeIn} 0.3s ease ${index * 0.05}s both`,
                 }}
               >
-                Go to Workflows
-              </Button>
-            </Card>
-          </motion.div>
-        ) : (
-          <Box>
-            <Box sx={{ mb: 4 }}>
-              <GradientText variant="h4" sx={{ fontWeight: 800, mb: 1 }}>
-                Workflow Instances
-              </GradientText>
-              <Typography variant="body2" color="text.secondary">
-                View and monitor all execution instances for this workflow
-              </Typography>
-            </Box>
-
-            <Stack spacing={2}>
-              {instances.map((instance, index) => (
-                <motion.div
-                  key={instance.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                {/* Instance Header */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    mb: 2,
+                  }}
                 >
-                  <GlowCard>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flex: 1 }}>
-                          <Avatar
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        color: getStatusColor(instance.status),
+                      }}
+                    >
+                      {getStatusIcon(instance.status)}
+                      <MonoText sx={{ fontSize: "12px", fontWeight: 600 }}>
+                        {instance.status}
+                      </MonoText>
+                    </Box>
+                    <MonoText sx={{ fontSize: "12px", color: colors.textMuted }}>
+                      {instance.id.substring(0, 8)}...
+                    </MonoText>
+                  </Box>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <MonoText sx={{ fontSize: "11px", color: colors.textMuted }}>
+                      {formatDateShort(instance.startedAt)}
+                    </MonoText>
+                    <ActionButton
+                      onClick={() =>
+                        router.push(
+                          `/workflows/${workflowId}/editor?instanceId=${instance.id}`
+                        )
+                      }
+                      style={{ borderColor: colors.cursor, color: colors.cursor }}
+                    >
+                      <VisibilityIcon sx={{ fontSize: 10 }} />
+                      view
+                    </ActionButton>
+                  </Box>
+                </Box>
+
+                {/* Error Display */}
+                {instance.error && (
+                  <Box
+                    sx={{
+                      mb: 2,
+                      p: 2,
+                      bgcolor: colors.bg,
+                      borderRadius: "4px",
+                      border: `1px solid ${colors.error}`,
+                    }}
+                  >
+                    <MonoText sx={{ fontSize: "11px", color: colors.error }}>
+                      <span style={{ color: colors.keyword }}>error</span>
+                      <span style={{ color: colors.operator }}>: </span>
+                      {instance.error}
+                    </MonoText>
+                  </Box>
+                )}
+
+                {/* Nodes */}
+                {instance.nodes && instance.nodes.length > 0 && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      gap: 1,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {instance.nodes.map((node) => (
+                      <NodeCard key={node.id}>
+                        {/* Node Kind Badge */}
+                        {node.nodeKind && (
+                          <Box
                             sx={{
-                              bgcolor: getStatusColorValue(instance.status),
-                              width: 56,
-                              height: 56,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 0.5,
+                              px: 1,
+                              py: 0.25,
+                              mb: 1,
+                              borderRadius: "3px",
+                              bgcolor: colors.function,
+                              color: colors.bg,
+                              fontSize: "9px",
+                              fontFamily:
+                                '"JetBrains Mono", "Fira Code", monospace',
+                              fontWeight: 600,
+                              textTransform: "uppercase",
                             }}
                           >
-                            {getStatusIcon(instance.status)}
-                          </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                              <Typography
-                                variant="h6"
-                                sx={{
-                                  fontWeight: 700,
-                                  color: 'text.primary',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                              >
-                                Instance {instance.id.substring(0, 8)}...
-                              </Typography>
-                              <Chip
-                                label={instance.status}
-                                color={getStatusColor(instance.status) as 'success' | 'error' | 'info' | 'default'}
-                                size="small"
-                                sx={{ textTransform: 'capitalize' }}
-                              />
-                              <Button
-                                component={Link}
-                                href={`/workflows/${workflowId}/editor?instanceId=${instance.id}`}
-                                size="small"
-                                variant="outlined"
-                                startIcon={<VisibilityIcon />}
-                                sx={{
-                                  ml: 'auto',
-                                  textTransform: 'none',
-                                  fontSize: '0.75rem',
-                                  minWidth: 'auto',
-                                  px: 1,
-                                }}
-                              >
-                                View in Editor
-                              </Button>
-                            </Box>
-                            <Stack direction="row" spacing={2} sx={{ mt: 1, flexWrap: 'wrap', gap: 1 }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <CalendarIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                                <Typography variant="body2" color="text.secondary">
-                                  Started: {new Date(instance.startedAt).toLocaleString(undefined, { 
-                                    year: 'numeric', 
-                                    month: 'short', 
-                                    day: 'numeric', 
-                                    hour: '2-digit', 
-                                    minute: '2-digit', 
-                                    second: '2-digit' 
-                                  })}
-                                </Typography>
-                              </Box>
-                              {instance.finishedAt && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <CheckCircleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                                  <Typography variant="body2" color="text.secondary">
-                                    Finished: {new Date(instance.finishedAt).toLocaleString(undefined, { 
-                                      year: 'numeric', 
-                                      month: 'short', 
-                                      day: 'numeric', 
-                                      hour: '2-digit', 
-                                      minute: '2-digit', 
-                                      second: '2-digit' 
-                                    })}
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Stack>
-                            {instance.error && (
-                              <Box
-                                sx={{
-                                  mt: 2,
-                                  p: 2,
-                                  bgcolor: alpha(theme.palette.error.main, 0.1),
-                                  borderRadius: 1,
-                                  border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
-                                }}
-                              >
-                                <Typography variant="body2" color="error" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                  Error:
-                                </Typography>
-                                <Typography variant="body2" color="error">
-                                  {instance.error}
-                                </Typography>
-                              </Box>
-                            )}
+                            {getKindIcon(node.nodeKind)}
+                            {node.nodeKind}
+                            {node.nodeKind === "timer" &&
+                              (() => {
+                                const duration = getTimerDuration(node);
+                                return duration !== null
+                                  ? ` ${duration}ms`
+                                  : "";
+                              })()}
+                          </Box>
+                        )}
 
-                            {/* Nodes/Activities Section */}
-                            {instance.nodes && instance.nodes.length > 0 && (
-                              <Box sx={{ mt: 1.5 }}>
-                                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-                                  {instance.nodes.map((node, nodeIndex) => (
-                                    <Card
-                                      key={node.id}
-                                      sx={{
-                                        bgcolor: alpha(theme.palette.primary.main, 0.02),
-                                        border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
-                                        position: 'relative',
-                                        transition: 'all 0.2s ease',
-                                        width: '240px',
-                                        flex: '0 0 auto',
-                                        '&:hover': {
-                                          borderColor: alpha(theme.palette.primary.main, 0.3),
-                                        },
-                                      }}
-                                    >
-                                      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                                        {/* Kind badge */}
-                                        {node.nodeKind && (
-                                          <Box
-                                            sx={{
-                                              position: 'absolute',
-                                              top: 4,
-                                              left: 4,
-                                              background: '#4f46e5',
-                                              color: 'white',
-                                              padding: '2px 4px 2px 2px',
-                                              borderRadius: '3px',
-                                              fontSize: '8px',
-                                              fontWeight: 'bold',
-                                              textTransform: 'uppercase',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '2px',
-                                            }}
-                                          >
-                                            <Box
-                                              sx={{
-                                                background: '#3730a3',
-                                                borderRadius: '2px',
-                                                padding: '1px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                              }}
-                                            >
-                                              {getKindIcon(node.nodeKind)}
-                                            </Box>
-                                            <span>{node.nodeKind}</span>
-                                            {node.nodeKind === 'timer' && (() => {
-                                              const duration = getTimerDuration(node);
-                                              return duration !== null ? ` (${duration} ms)` : '';
-                                            })()}
-                                          </Box>
-                                        )}
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, mt: node.nodeKind ? 2 : 0 }}>
-                                          <Avatar
-                                            sx={{
-                                              bgcolor: getActivityStatusColorValue(node.status),
-                                              width: 28,
-                                              height: 28,
-                                            }}
-                                          >
-                                            <NodeIcon sx={{ fontSize: 16 }} />
-                                          </Avatar>
-                                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                                            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.8rem', display: 'block' }}>
-                                              {node.nodeName || `Node ${nodeIndex + 1}`}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                              {node.nodeId.substring(0, 8)}...
-                                            </Typography>
-                                          </Box>
-                                          <Chip
-                                            label={node.status}
-                                            color={getActivityStatusColor(node.status) as 'success' | 'error' | 'info' | 'default'}
-                                            size="small"
-                                            sx={{ 
-                                              textTransform: 'capitalize',
-                                              height: '22px',
-                                              fontSize: '0.7rem',
-                                              '& .MuiChip-label': { px: 0.75 }
-                                            }}
-                                          />
-                                        </Box>
-
-                                        {(node.input || node.output) && (
-                                          <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-                                            {node.input && (
-                                              <Button
-                                                size="small"
-                                                variant="outlined"
-                                                startIcon={<CodeIcon />}
-                                                onClick={() => handleOpenDialog(node.id, 'input')}
-                                                sx={{
-                                                  textTransform: 'none',
-                                                  fontSize: '0.7rem',
-                                                  py: 0.5,
-                                                  px: 1.5,
-                                                }}
-                                              >
-                                                Input
-                                              </Button>
-                                            )}
-                                            {node.output && (
-                                              <Button
-                                                size="small"
-                                                variant="outlined"
-                                                startIcon={<CodeIcon />}
-                                                onClick={() => handleOpenDialog(node.id, 'output')}
-                                                sx={{
-                                                  textTransform: 'none',
-                                                  fontSize: '0.7rem',
-                                                  py: 0.5,
-                                                  px: 1.5,
-                                                }}
-                                              >
-                                                Output
-                                              </Button>
-                                            )}
-                                          </Box>
-                                        )}
-
-                                        {node.error && (
-                                          <Box
-                                            sx={{
-                                              mt: 1,
-                                              p: 1,
-                                              bgcolor: alpha(theme.palette.error.main, 0.1),
-                                              borderRadius: 1,
-                                              border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
-                                            }}
-                                          >
-                                            <Typography variant="caption" color="error" sx={{ fontWeight: 600, display: 'block', mb: 0.25, fontSize: '0.7rem' }}>
-                                              Error:
-                                            </Typography>
-                                            <Typography variant="caption" color="error" sx={{ fontSize: '0.7rem' }}>
-                                              {node.error}
-                                            </Typography>
-                                          </Box>
-                                        )}
-
-                                        {(node.startedAt || node.finishedAt) && (
-                                          <Box sx={{ mt: 1, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-                                            {node.startedAt && (
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                                Started: {new Date(node.startedAt).toLocaleString(undefined, { 
-                                                  year: 'numeric', 
-                                                  month: 'short', 
-                                                  day: 'numeric', 
-                                                  hour: '2-digit', 
-                                                  minute: '2-digit', 
-                                                  second: '2-digit' 
-                                                })}
-                                              </Typography>
-                                            )}
-                                            {node.finishedAt && (
-                                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                                Finished: {new Date(node.finishedAt).toLocaleString(undefined, { 
-                                                  year: 'numeric', 
-                                                  month: 'short', 
-                                                  day: 'numeric', 
-                                                  hour: '2-digit', 
-                                                  minute: '2-digit', 
-                                                  second: '2-digit' 
-                                                })}
-                                              </Typography>
-                                            )}
-                                          </Box>
-                                        )}
-                                      </CardContent>
-                                    </Card>
-                                  ))}
-                                </Stack>
-                              </Box>
-                            )}
+                        {/* Node Info */}
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                            mb: 1,
+                          }}
+                        >
+                          <MonoText
+                            sx={{
+                              fontSize: "12px",
+                              color: colors.variable,
+                              flex: 1,
+                            }}
+                          >
+                            {node.nodeName || `node_${node.nodeId.substring(0, 4)}`}
+                          </MonoText>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 0.5,
+                              color: getStatusColor(node.status),
+                            }}
+                          >
+                            {getStatusIcon(node.status)}
                           </Box>
                         </Box>
-                      </Box>
-                    </CardContent>
-                  </GlowCard>
-                </motion.div>
-              ))}
-            </Stack>
+
+                        {/* Node Actions */}
+                        {(node.input || node.output) && (
+                          <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                            {node.input && (
+                              <ActionButton
+                                onClick={() => handleOpenDialog(node.id, "input")}
+                              >
+                                <CodeIcon sx={{ fontSize: 10 }} />
+                                in
+                              </ActionButton>
+                            )}
+                            {node.output && (
+                              <ActionButton
+                                onClick={() => handleOpenDialog(node.id, "output")}
+                              >
+                                <CodeIcon sx={{ fontSize: 10 }} />
+                                out
+                              </ActionButton>
+                            )}
+                          </Box>
+                        )}
+
+                        {/* Node Error */}
+                        {node.error && (
+                          <MonoText
+                            sx={{
+                              fontSize: "10px",
+                              color: colors.error,
+                              mt: 1,
+                              display: "block",
+                            }}
+                          >
+                            {node.error.substring(0, 50)}
+                            {node.error.length > 50 ? "..." : ""}
+                          </MonoText>
+                        )}
+                      </NodeCard>
+                    ))}
+                  </Box>
+                )}
+              </InstanceRow>
+            ))}
           </Box>
         )}
-      </Container>
+      </Box>
+
+      {/* Modal */}
       {getModalContent()}
-    </Box>
+    </PageLayout>
   );
 }
-

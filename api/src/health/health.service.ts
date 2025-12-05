@@ -1,6 +1,8 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
+import { Kafka } from 'kafkajs';
+import amqplib from 'amqplib';
 
 type NodeStatus = {
   ok: boolean;
@@ -55,6 +57,12 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
     const { ok: replicationOk, lagMs, error: replicationError } =
       await this.checkReplicationProbe();
 
+    // 4) Kafka health check
+    const kafka = await this.checkKafka();
+
+    // 5) RabbitMQ health check
+    const rabbitmq = await this.checkRabbitMQ();
+
     console.log('[HEALTH] cluster', {
       dbOk,
       pg1,
@@ -64,6 +72,8 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
         lagMs,
         error: replicationError,
       },
+      kafka,
+      rabbitmq,
     });
   }
 
@@ -134,6 +144,48 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
         await this.primaryPool.query(deleteSql, [id]);
       } catch {
         // ignore cleanup error
+      }
+    }
+  }
+
+  private async checkKafka(): Promise<{ ok: boolean; error?: string }> {
+    const kafkaBrokers = process.env.KAFKA_BROKERS || 'localhost:9092';
+    const kafka = new Kafka({
+      clientId: 'health-check',
+      brokers: kafkaBrokers.split(','),
+      retry: { retries: 1 },
+    });
+
+    const admin = kafka.admin();
+    try {
+      await admin.connect();
+      await admin.listTopics();
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
+    } finally {
+      try {
+        await admin.disconnect();
+      } catch {
+        // ignore disconnect error
+      }
+    }
+  }
+
+  private async checkRabbitMQ(): Promise<{ ok: boolean; error?: string }> {
+    const rabbitUrl = process.env.RABBIT_URL || 'amqp://localhost';
+    let conn: any = null;
+
+    try {
+      conn = await amqplib.connect(rabbitUrl);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
+    } finally {
+      try {
+        await conn?.close();
+      } catch {
+        // ignore close error
       }
     }
   }

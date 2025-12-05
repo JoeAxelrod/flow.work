@@ -252,18 +252,20 @@ export function StationNode({ data, id }: StationNodeProps) {
           }}>
             {data.label}
           </div>
-          {instanceData && (
-            <div style={{ 
-              fontSize: '10px', 
-              color: instanceData.status === 'success' ? colors.success : instanceData.status === 'failed' ? colors.error : colors.textMuted, 
-              marginTop: '4px',
-              fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
-            }}>
-              {instanceData.status}
-            </div>
-          )}
+          {/* Always reserve space for status to keep consistent node size */}
+          <div style={{ 
+            fontSize: '10px', 
+            color: instanceData?.status === 'success' ? colors.success : instanceData?.status === 'failed' ? colors.error : colors.textMuted, 
+            marginTop: '4px',
+            fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+            minHeight: '15px',
+            visibility: instanceData ? 'visible' : 'hidden',
+          }}>
+            {instanceData?.status || 'pending'}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', flexShrink: 0, marginLeft: '8px' }}>
+        {/* Fixed width button container to prevent node size changes */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', flexShrink: 0, marginLeft: '8px', minWidth: '108px' }}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -286,76 +288,80 @@ export function StationNode({ data, id }: StationNodeProps) {
           >
             <SettingsIcon sx={{ fontSize: 14, color: colors.textMuted }} />
           </button>
-          {instanceData && (
-            <button
-              onClick={handleMetadataToggle}
-              style={{
-                background: 'transparent',
-                border: `1px solid ${colors.cursor}`,
-                borderRadius: '4px',
-                width: '24px',
-                height: '24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-              }}
-              title="View metadata"
-            >
-              <InfoIcon sx={{ fontSize: 14, color: colors.cursor }} />
-            </button>
-          )}
-          {!isInstanceMode && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const event = new CustomEvent('copyNode', { detail: { nodeId: id } });
-                  window.dispatchEvent(event);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: `1px solid ${colors.success}`,
-                  borderRadius: '4px',
-                  width: '24px',
-                  height: '24px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0,
-                }}
-                title="Copy node"
-              >
-                <CopyIcon sx={{ fontSize: 14, color: colors.success }} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm('Are you sure you want to delete this node?')) {
-                    const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
-                    window.dispatchEvent(event);
-                  }
-                }}
-                style={{
-                  background: 'transparent',
-                  border: `1px solid ${colors.error}`,
-                  borderRadius: '4px',
-                  width: '24px',
-                  height: '24px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0,
-                }}
-                title="Delete node"
-              >
-                <DeleteIcon sx={{ fontSize: 14, color: colors.error }} />
-              </button>
-            </>
-          )}
+          {/* Info button - only functional in instance mode with data */}
+          <button
+            onClick={instanceData ? handleMetadataToggle : undefined}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${instanceData ? colors.cursor : colors.border}`,
+              borderRadius: '4px',
+              width: '24px',
+              height: '24px',
+              cursor: instanceData ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              opacity: instanceData ? 1 : 0.3,
+              visibility: isInstanceMode ? 'visible' : 'hidden',
+            }}
+            title="View metadata"
+            disabled={!instanceData}
+          >
+            <InfoIcon sx={{ fontSize: 14, color: instanceData ? colors.cursor : colors.textMuted }} />
+          </button>
+          {/* Copy button - only in edit mode */}
+          <button
+            onClick={!isInstanceMode ? (e) => {
+              e.stopPropagation();
+              const event = new CustomEvent('copyNode', { detail: { nodeId: id } });
+              window.dispatchEvent(event);
+            } : undefined}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${colors.success}`,
+              borderRadius: '4px',
+              width: '24px',
+              height: '24px',
+              cursor: !isInstanceMode ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              visibility: !isInstanceMode ? 'visible' : 'hidden',
+            }}
+            title="Copy node"
+            disabled={isInstanceMode}
+          >
+            <CopyIcon sx={{ fontSize: 14, color: colors.success }} />
+          </button>
+          {/* Delete button - only in edit mode */}
+          <button
+            onClick={!isInstanceMode ? (e) => {
+              e.stopPropagation();
+              if (confirm('Are you sure you want to delete this node?')) {
+                const event = new CustomEvent('deleteNode', { detail: { nodeId: id } });
+                window.dispatchEvent(event);
+              }
+            } : undefined}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${colors.error}`,
+              borderRadius: '4px',
+              width: '24px',
+              height: '24px',
+              cursor: !isInstanceMode ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              visibility: !isInstanceMode ? 'visible' : 'hidden',
+            }}
+            title="Delete node"
+            disabled={isInstanceMode}
+          >
+            <DeleteIcon sx={{ fontSize: 14, color: colors.error }} />
+          </button>
         </div>
       </div>
     </div>
